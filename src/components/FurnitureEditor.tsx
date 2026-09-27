@@ -6,6 +6,7 @@ import { newId } from '../lib/id'
 import { scaleStrokes } from '../lib/strokes'
 import { LengthInput } from './LengthInput'
 import { DrawingPad } from './DrawingPad'
+import { ColorSwatches } from './ColorSwatches'
 
 const FILLS = ['#ffffff', '#f3eee4', '#e8dcc6', '#d9c3a5', '#c7d4c0', '#c9d6e3', '#e7cfd0', '#d8d8d8']
 
@@ -159,11 +160,7 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
 
             <div className="field">
               <label>Colour</label>
-              <div className="swatches">
-                {FILLS.map((c) => (
-                  <button key={c} className={`swatch ${fill === c ? 'on' : ''}`} style={{ background: c }} onClick={() => setFill(c)} aria-label={`Fill ${c}`} />
-                ))}
-              </div>
+              <ColorSwatches label="Fill" colors={FILLS} value={fill} onChange={setFill} allowTransparent />
             </div>
           </div>
 

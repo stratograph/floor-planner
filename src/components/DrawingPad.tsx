@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Stroke } from '../types'
 import { strokePath, strokesNear } from '../lib/strokes'
+import { ColorSwatches } from './ColorSwatches'
 
 export const INK_COLORS = ['#222222', '#6b6b6b', '#8a5a3b', '#2f5d50', '#2c5d8f', '#b8453a', '#ffffff']
 const SIZES = [
@@ -29,6 +30,10 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
   const penSeen = useRef(false)
   const active = useRef<number | null>(null)
   const eraseStart = useRef<Stroke[] | null>(null)
+  // The live stroke / erase result are tracked in refs, not just state: several pointer events can arrive
+  // before React re-renders, and reading state in pointerup would drop the last points of a quick stroke.
+  const liveStroke = useRef<Stroke | null>(null)
+  const eraseList = useRef<Stroke[]>(strokes)
 
   useLayoutEffect(() => {
     const el = wrapRef.current!
@@ -69,9 +74,11 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
     const p = toLocal(e)
     if (tool === 'eraser') {
       eraseStart.current = strokes
-      onChange(eraseAt(p.x, p.y, strokes))
+      eraseList.current = eraseAt(p.x, p.y, strokes)
+      if (eraseList.current !== strokes) onChange(eraseList.current)
     } else {
-      setCurrent({ points: [[p.x, p.y, pressure(e.nativeEvent)]], color, size: sizePx / k, pen: e.pointerType === 'pen' })
+      liveStroke.current = { points: [[p.x, p.y, pressure(e.nativeEvent)]], color, size: sizePx / k, pen: e.pointerType === 'pen' }
+      setCurrent(liveStroke.current)
     }
   }
 
@@ -80,24 +87,22 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent]
     const list = events.length ? events : [e.nativeEvent]
     if (tool === 'eraser') {
-      let next = strokes
+      let next = eraseList.current
       for (const ev of list) {
         const p = toLocal(ev)
         next = eraseAt(p.x, p.y, next)
       }
-      if (next !== strokes) onChange(next)
-    } else {
-      setCurrent((c) =>
-        c
-          ? {
-              ...c,
-              points: [...c.points, ...list.map((ev) => {
-                const p = toLocal(ev)
-                return [p.x, p.y, pressure(ev)] as [number, number, number]
-              })],
-            }
-          : c,
-      )
+      if (next !== eraseList.current) {
+        eraseList.current = next
+        onChange(next)
+      }
+    } else if (liveStroke.current) {
+      const added = list.map((ev) => {
+        const p = toLocal(ev)
+        return [p.x, p.y, pressure(ev)] as [number, number, number]
+      })
+      liveStroke.current = { ...liveStroke.current, points: [...liveStroke.current.points, ...added] }
+      setCurrent(liveStroke.current)
     }
   }
 
@@ -105,10 +110,11 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
     if (active.current !== e.pointerId) return
     active.current = null
     if (tool === 'eraser') {
-      if (eraseStart.current && eraseStart.current !== strokes) commit(strokes, eraseStart.current)
+      if (eraseStart.current && eraseStart.current !== eraseList.current) commit(eraseList.current, eraseStart.current)
       eraseStart.current = null
-    } else if (current) {
-      commit([...strokes, current])
+    } else if (liveStroke.current) {
+      commit([...strokes, liveStroke.current])
+      liveStroke.current = null
       setCurrent(null)
     }
   }
@@ -137,20 +143,16 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
             Eraser
           </button>
         </div>
-        <div className="swatches">
-          {INK_COLORS.map((c) => (
-            <button
-              key={c}
-              className={`swatch ${c === color && tool === 'pen' ? 'on' : ''}`}
-              style={{ background: c }}
-              aria-label={`Ink ${c}`}
-              onClick={() => {
-                setColor(c)
-                setTool('pen')
-              }}
-            />
-          ))}
-        </div>
+        <ColorSwatches
+          label="Ink"
+          colors={INK_COLORS}
+          value={color}
+          active={tool === 'pen'}
+          onChange={(c) => {
+            setColor(c)
+            setTool('pen')
+          }}
+        />
         <div className="seg">
           {SIZES.map((s) => (
             <button key={s.px} className={sizePx === s.px ? 'on' : ''} onClick={() => setSizePx(s.px)} aria-label={s.label}>
@@ -168,7 +170,7 @@ export function DrawingPad({ width, depth, fill, strokes, onChange }: Props) {
       </div>
       <div className="pad-area" ref={wrapRef}>
         {k > 0 && (
-          <div className="pad-sheet" style={{ width: pw, height: ph }}>
+          <div className={`pad-sheet ${fill === 'transparent' ? 'checker' : ''}`} style={{ width: pw, height: ph }}>
             <svg
               ref={svgRef}
               width={pw}

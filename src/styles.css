@@ -960,3 +960,45 @@ h3 {
 .pack-info em.warn {
   color: #9a6a12;
 }
+
+/* ---------- Colour swatches ---------- */
+
+.swatch {
+  position: relative;
+  flex-shrink: 0;
+}
+.checker,
+.swatch.transparent {
+  background-color: #fff;
+  background-image: linear-gradient(45deg, #d9d9d9 25%, transparent 25%), linear-gradient(-45deg, #d9d9d9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9d9d9 75%), linear-gradient(-45deg, transparent 75%, #d9d9d9 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+}
+.swatch.picker {
+  display: block;
+  cursor: pointer;
+  overflow: hidden;
+  background: conic-gradient(#e0433b, #e8c547, #58b368, #3aa0d8, #6a5acd, #d24bb0, #e0433b);
+}
+.swatch.picker:not(.custom)::after {
+  content: '+';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+.swatch.picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
