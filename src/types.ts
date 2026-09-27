@@ -19,6 +19,8 @@ export interface FurnitureItem {
   /** Size along the y axis, in cm. */
   depth: number
   count: number
+  /** Placement priority group, 1 (place first) to 5. Missing on older items; treat as DEFAULT_PRIORITY. */
+  priority?: number
   fill: string
   strokes: Stroke[]
   createdAt: number

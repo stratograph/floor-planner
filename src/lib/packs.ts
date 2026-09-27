@@ -77,6 +77,7 @@ function sanitizeItem(raw: unknown): FurnitureItem | null {
     width: i.width,
     depth: i.depth,
     count: isNum(i.count) && i.count >= 1 ? Math.round(i.count) : 1,
+    ...(isNum(i.priority) ? { priority: Math.min(5, Math.max(1, Math.round(i.priority))) } : {}),
     fill: typeof i.fill === 'string' ? i.fill : '#f3eee4',
     strokes: Array.isArray(i.strokes) ? i.strokes.map(sanitizeStroke).filter((s): s is Stroke => s !== null) : [],
     createdAt: isNum(i.createdAt) ? i.createdAt : Date.now(),
@@ -90,6 +91,7 @@ export function sameItem(a: FurnitureItem, b: FurnitureItem) {
     a.width === b.width &&
     a.depth === b.depth &&
     a.count === b.count &&
+    a.priority === b.priority &&
     a.fill === b.fill &&
     JSON.stringify(a.strokes) === JSON.stringify(b.strokes)
   )

@@ -1002,3 +1002,13 @@ h3 {
   padding: 0;
   cursor: pointer;
 }
+
+.priority-group h4 {
+  margin: 10px 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+h3 + .priority-group h4 {
+  margin-top: 0;
+}

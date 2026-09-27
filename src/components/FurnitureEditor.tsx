@@ -7,6 +7,7 @@ import { scaleStrokes } from '../lib/strokes'
 import { LengthInput } from './LengthInput'
 import { DrawingPad } from './DrawingPad'
 import { ColorSwatches } from './ColorSwatches'
+import { DEFAULT_PRIORITY, PRIORITIES } from '../lib/priority'
 
 const FILLS = ['#ffffff', '#f3eee4', '#e8dcc6', '#d9c3a5', '#c7d4c0', '#c9d6e3', '#e7cfd0', '#d8d8d8']
 
@@ -36,6 +37,7 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
   const [width, setWidth] = useState<number | null>(existing?.width ?? null)
   const [depth, setDepth] = useState<number | null>(existing?.depth ?? null)
   const [count, setCount] = useState(existing?.count ?? 1)
+  const [priority, setPriority] = useState(existing?.priority ?? DEFAULT_PRIORITY)
   const [fill, setFill] = useState(existing?.fill ?? FILLS[1])
   const [strokes, setStrokes] = useState<Stroke[]>(existing?.strokes ?? [])
   // Remount the length inputs when a preset overwrites them.
@@ -69,6 +71,7 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
       width,
       depth,
       count,
+      priority,
       fill,
       strokes,
       createdAt: existing?.createdAt ?? Date.now(),
@@ -156,6 +159,18 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
                 </button>
               </div>
               {count < maxPlaced && <div className="hint warn">{maxPlaced} are already placed on a floorplan.</div>}
+            </div>
+
+            <div className="field">
+              <label>Placement priority</label>
+              <div className="seg" role="group" aria-label="Placement priority">
+                {PRIORITIES.map((p) => (
+                  <button key={p} className={priority === p ? 'on' : ''} onClick={() => setPriority(p)} aria-pressed={priority === p}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <div className="hint">1 = place first (beds, sofas), 5 = last (rugs, lamps). Bigger pieces come first within a group.</div>
             </div>
 
             <div className="field">

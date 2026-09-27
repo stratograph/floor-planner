@@ -4,6 +4,7 @@ import { useActivePlan, useStore } from '../store'
 import { clientToWorld, useUi, viewCenterWorld } from '../uiStore'
 import { formatDims } from '../lib/units'
 import { parsePackFile } from '../lib/packs'
+import { byPlacementOrder, priorityOf } from '../lib/priority'
 import { ItemThumb } from './ItemThumb'
 
 const DRAG_THRESHOLD = 8
@@ -30,13 +31,16 @@ export function LibraryPanel() {
     return m
   }, [plan?.placements])
 
-  const rows = library.map((item) => {
+  const rows = [...library].sort(byPlacementOrder).map((item) => {
     const placed = placedCounts.get(item.id) ?? 0
     return { item, placed, remaining: item.count - placed }
   })
   const toPlace = rows.filter((r) => r.remaining > 0)
   const done = rows.filter((r) => r.remaining <= 0)
   const totalLeft = toPlace.reduce((n, r) => n + r.remaining, 0)
+  // Only split into priority groups when more than one priority is actually in use.
+  const toPlaceGroups = [...new Set(toPlace.map((r) => priorityOf(r.item)))]
+  const grouped = toPlaceGroups.length > 1
 
   const placeAt = (item: FurnitureItem, x: number, y: number) => {
     const id = addPlacement(item.id, x, y)
@@ -210,7 +214,16 @@ export function LibraryPanel() {
             {toPlace.length > 0 && (
               <section>
                 <h3>{plan ? 'Left to place' : 'Library'}</h3>
-                <ul className="cards">{toPlace.map(renderCard)}</ul>
+                {grouped ? (
+                  toPlaceGroups.map((p) => (
+                    <div key={p} className="priority-group">
+                      <h4>Priority {p}</h4>
+                      <ul className="cards">{toPlace.filter((r) => priorityOf(r.item) === p).map(renderCard)}</ul>
+                    </div>
+                  ))
+                ) : (
+                  <ul className="cards">{toPlace.map(renderCard)}</ul>
+                )}
               </section>
             )}
             {done.length > 0 && (

@@ -12,5 +12,5 @@
   - `streamline`/`smoothing` settings may add visible lag behind the Pencil tip
   - Check coalesced events and pressure handling on iPad (`getCoalescedEvents`, pressure 0 at stroke start)
 - [ ] Update the rotation snapping logic (details to be decided)
-- [ ] Placement priority: sort the "Left to place" list so big pieces come before rugs, chairs, etc. (by size, or a priority set per piece)
+- [x] Placement priority: each piece has a priority group 1–5 (default 3); "Left to place" is grouped by priority, biggest pieces first within a group
 - [ ] Layer order for placed furniture: bring forward / send backward / bring to front / send to back (e.g. a rug under a table)
