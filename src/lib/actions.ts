@@ -10,7 +10,8 @@ export async function importFloorplan(file: File) {
   await saveImage(id, dataUrl)
   useStore.getState().addPlan({
     id,
-    name: file.name.replace(/\.[^.]+$/, '') || 'Floorplan',
+    // Named by the user during setup (see CalibrationBar) — file names like IMG_2041 aren't memorable.
+    name: '',
     imageWidth: width,
     imageHeight: height,
     cmPerPx: null,
@@ -20,6 +21,8 @@ export async function importFloorplan(file: File) {
   })
   startCalibration(null)
 }
+
+export const planLabel = (plan: Plan) => plan.name || 'Untitled floorplan'
 
 export function startCalibration(plan: Plan | null) {
   const ui = useUi.getState()

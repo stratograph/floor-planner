@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { FurnitureItem } from '../types'
 import { useActivePlan, useStore } from '../store'
 import { clientToWorld, useUi, viewCenterWorld } from '../uiStore'
 import { formatDims } from '../lib/units'
+import { parsePackFile } from '../lib/packs'
 import { ItemThumb } from './ItemThumb'
 
 const DRAG_THRESHOLD = 8
@@ -17,6 +18,9 @@ export function LibraryPanel() {
   const setDrag = useUi((s) => s.setDrag)
   const select = useUi((s) => s.select)
   const showToast = useUi((s) => s.showToast)
+  const setPackDialog = useUi((s) => s.setPackDialog)
+  const packFile = useRef<HTMLInputElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const canPlace = !!plan?.cmPerPx && mode === 'arrange'
 
@@ -138,9 +142,56 @@ export function LibraryPanel() {
             <div className="sub">{plan ? `${totalLeft} piece${totalLeft === 1 ? '' : 's'} left to place` : `${library.length} items`}</div>
           )}
         </div>
-        <button className="btn primary small" onClick={() => setEditing('new')}>
-          + New
-        </button>
+        <div className="library-head-actions">
+          <div className="menu-wrap">
+            <button className="icon-btn" onClick={() => setMenuOpen((o) => !o)} aria-label="Furniture options" aria-expanded={menuOpen}>
+              ⋯
+            </button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="menu menu-left" role="menu">
+                  <button
+                    disabled={!library.length}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setPackDialog({ mode: 'export' })
+                    }}
+                  >
+                    Share furniture pack…
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      packFile.current?.click()
+                    }}
+                  >
+                    Import furniture pack…
+                  </button>
+                </div>
+              </>
+            )}
+            <input
+              ref={packFile}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (!file) return
+                try {
+                  setPackDialog({ mode: 'import', pack: await parsePackFile(file) })
+                } catch (err) {
+                  showToast((err as Error).message)
+                }
+              }}
+            />
+          </div>
+          <button className="btn primary small" onClick={() => setEditing('new')}>
+            + New
+          </button>
+        </div>
       </header>
 
       {plan && !plan.cmPerPx && library.length > 0 && <p className="library-note">Set the floorplan's scale to start placing furniture.</p>}

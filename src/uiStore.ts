@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ParsedPack } from './lib/packs'
 
 export interface View {
   x: number
@@ -24,6 +25,9 @@ interface UiState {
   setMode: (mode: Mode) => void
   calLine: CalLine | null
   setCalLine: (line: CalLine | null) => void
+  /** Bumped each time the user finishes drawing a calibration line. */
+  calLineDrawn: number
+  markCalLineDrawn: () => void
   selectedId: string | null
   select: (id: string | null) => void
   /** The furniture item currently open in the editor ('new' for a fresh one). */
@@ -32,6 +36,8 @@ interface UiState {
   /** Library item being dragged towards the canvas. */
   drag: { itemId: string; clientX: number; clientY: number } | null
   setDrag: (drag: UiState['drag']) => void
+  packDialog: { mode: 'export' } | { mode: 'import'; pack: ParsedPack } | null
+  setPackDialog: (d: UiState['packDialog']) => void
   canvasEl: HTMLElement | null
   setCanvasEl: (el: HTMLElement | null) => void
   toast: string | null
@@ -47,12 +53,16 @@ export const useUi = create<UiState>()((set) => ({
   setMode: (mode) => set({ mode, selectedId: null }),
   calLine: null,
   setCalLine: (calLine) => set({ calLine }),
+  calLineDrawn: 0,
+  markCalLineDrawn: () => set((s) => ({ calLineDrawn: s.calLineDrawn + 1 })),
   selectedId: null,
   select: (selectedId) => set({ selectedId }),
   editing: null,
   setEditing: (editing) => set({ editing }),
   drag: null,
   setDrag: (drag) => set({ drag }),
+  packDialog: null,
+  setPackDialog: (packDialog) => set({ packDialog }),
   canvasEl: null,
   setCanvasEl: (canvasEl) => set({ canvasEl }),
   toast: null,

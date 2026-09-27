@@ -1,5 +1,6 @@
 import { snapshot, useStore, type PersistedState } from '../store'
 import { loadImageData, saveImage } from './images'
+import { saveFile } from './share'
 
 interface Backup {
   app: 'floorplan-furnisher'
@@ -18,14 +19,7 @@ export async function exportBackup() {
   }
   const backup: Backup = { app: 'floorplan-furnisher', version: 1, exportedAt: new Date().toISOString(), state, images }
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `floorplan-backup-${new Date().toISOString().slice(0, 10)}.json`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  await saveFile(blob, `floorplan-backup-${new Date().toISOString().slice(0, 10)}.json`, 'Floorplan backup')
 }
 
 export async function importBackup(file: File) {

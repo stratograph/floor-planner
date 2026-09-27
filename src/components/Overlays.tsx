@@ -12,23 +12,31 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
   const showToast = useUi((s) => s.showToast)
   const units = useStore((s) => s.units)
   const calibratePlan = useStore((s) => s.calibratePlan)
+  const renamePlan = useStore((s) => s.renamePlan)
+  const [name, setName] = useState(plan.name)
   const [lengthCm, setLengthCm] = useState<number | null>(plan.calibration?.lengthCm ?? null)
 
-  // Focus the length field once the first line is drawn. (autoFocus would fire mid-gesture and lose focus to the canvas.)
+  // After each line is drawn, move focus to the next thing to fill in: the name if it's blank, else the length.
+  // (Done on pointer-up; focusing on pointer-down would be undone by the canvas taking focus.)
   const cardRef = useRef<HTMLDivElement>(null)
-  const hasLine = !!calLine
+  const calLineDrawn = useUi((s) => s.calLineDrawn)
   useEffect(() => {
-    if (!hasLine) return
-    const t = setTimeout(() => cardRef.current?.querySelector('input')?.focus({ preventScroll: true }), 0)
+    if (!calLineDrawn) return
+    const t = setTimeout(() => {
+      const card = cardRef.current
+      const target = card?.querySelector<HTMLInputElement>('#plan-name')?.value.trim() ? '.length-input input' : '#plan-name'
+      card?.querySelector<HTMLInputElement>(target)?.focus({ preventScroll: true })
+    }, 0)
     return () => clearTimeout(t)
-  }, [hasLine])
+  }, [calLineDrawn])
 
   const linePx = calLine ? Math.hypot(calLine.x2 - calLine.x1, calLine.y2 - calLine.y1) : 0
-  const canApply = !!calLine && linePx > 1 && !!lengthCm
+  const canApply = !!calLine && linePx > 1 && !!lengthCm && !!name.trim()
 
   const apply = () => {
     if (!calLine || !lengthCm || !canApply) return
     const cmPerPx = lengthCm / linePx
+    renamePlan(plan.id, name.trim())
     calibratePlan(plan.id, { ...calLine, lengthCm }, cmPerPx)
     setMode('arrange')
     const w = formatLength(plan.imageWidth * cmPerPx, units)
@@ -38,7 +46,17 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
 
   return (
     <div className="overlay-card calibration" ref={cardRef}>
-      <h3>Set the scale</h3>
+      <h3>{plan.cmPerPx ? 'Set the scale' : 'Set up this floorplan'}</h3>
+      <div className="field plan-name-field">
+        <label htmlFor="plan-name">Floorplan name</label>
+        <input
+          id="plan-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. 14 Elm Road — 2 bed flat"
+          autoComplete="off"
+        />
+      </div>
       {!calLine ? (
         <p>
           Draw a line along something whose length is printed on the plan — ideally a long room dimension. Pinch or use the
@@ -60,6 +78,7 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
               Set scale
             </button>
           </div>
+          {!name.trim() && <div className="hint warn">Name the floorplan to finish.</div>}
         </>
       )}
       {plan.cmPerPx && (

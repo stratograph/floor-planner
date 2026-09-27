@@ -65,6 +65,7 @@ export function PlanCanvas({ plan }: Props) {
 
   const library = useStore((s) => s.library)
   const opacity = useStore((s) => s.floorplanOpacity)
+  const showLabels = useStore((s) => s.showLabels)
   const updatePlacement = useStore((s) => s.updatePlacement)
   const removePlacement = useStore((s) => s.removePlacement)
   const { image, error: imageError } = usePlanImage(plan.id)
@@ -235,6 +236,7 @@ export function PlanCanvas({ plan }: Props) {
         const k = useStore.getState().plans.find((pl) => pl.id === plan.id)?.cmPerPx ?? 1
         // Ignore taps: a line must be at least ~8 screen px long.
         if (cur && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) * k * v.scale < 8) useUi.getState().setCalLine(draw.prev)
+        else useUi.getState().markCalLineDrawn()
         draw = null
       }
     }
@@ -348,6 +350,7 @@ export function PlanCanvas({ plan }: Props) {
                     key={pl.id}
                     placement={pl}
                     item={item}
+                    showLabel={showLabels}
                     draggable={arranging}
                     nodeRef={(n) => (n ? nodes.current.set(pl.id, n) : nodes.current.delete(pl.id))}
                     onSelect={() => select(pl.id)}
@@ -410,6 +413,7 @@ export function PlanCanvas({ plan }: Props) {
                       const cur = useUi.getState().calLine
                       if (cur) setCalLine({ ...cur, [`x${end}`]: e.target.x() / cmPerPx, [`y${end}`]: e.target.y() / cmPerPx })
                     }}
+                    onDragEnd={() => useUi.getState().markCalLineDrawn()}
                   >
                     <Circle name="cal-handle" radius={handleR * 1.6} fill="rgba(228,87,46,0.18)" stroke="#e4572e" strokeWidth={1.5} strokeScaleEnabled={false} />
                     <Circle name="cal-handle" radius={handleR * 0.22} fill="#e4572e" />
@@ -447,6 +451,7 @@ function ScaleBar({ scale }: { scale: number }) {
 interface NodeProps {
   placement: Placement
   item: FurnitureItem
+  showLabel: boolean
   draggable: boolean
   nodeRef: (n: Konva.Group | null) => void
   onSelect: () => void
@@ -454,7 +459,7 @@ interface NodeProps {
   onDragEnd: (n: Konva.Group) => void
 }
 
-function FurnitureNode({ placement, item, draggable, nodeRef, onSelect, onDragStart, onDragEnd }: NodeProps) {
+function FurnitureNode({ placement, item, showLabel, draggable, nodeRef, onSelect, onDragStart, onDragEnd }: NodeProps) {
   const { width: w, depth: d } = item
   return (
     <Group
@@ -487,20 +492,45 @@ function FurnitureNode({ placement, item, draggable, nodeRef, onSelect, onDragSt
           <Path key={i} data={strokePath(s)} fill={s.color} stroke={s.color} strokeWidth={0.6} strokeScaleEnabled={false} />
         ))}
       </Group>
-      {item.strokes.length === 0 && (
-        <Text
-          text={item.name}
-          width={w}
-          height={d}
-          align="center"
-          verticalAlign="middle"
-          fontSize={Math.max(4, Math.min(w, d) / 5)}
-          fontFamily="system-ui, -apple-system, sans-serif"
-          fill="#333"
-          padding={Math.min(w, d) * 0.06}
-          listening={false}
-        />
-      )}
+      {(showLabel || item.strokes.length === 0) && <NameLabel item={item} rotation={placement.rotation} />}
     </Group>
+  )
+}
+
+/**
+ * The piece's name, written along its long side with a light halo so it stays readable over a sketch.
+ * Flipped when needed so it never reads upside down.
+ */
+function NameLabel({ item, rotation }: { item: FurnitureItem; rotation: number }) {
+  const { width: w, depth: d } = item
+  const along = w >= d ? 0 : -90
+  const facing = (((rotation + along) % 360) + 360) % 360
+  const flip = facing > 90 && facing <= 270 ? 180 : 0
+  const long = Math.max(w, d)
+  const short = Math.min(w, d)
+  const fontSize = Math.min(24, Math.max(3, Math.min(short * 0.3, (long * 0.9) / (Math.max(item.name.length, 4) * 0.58))))
+  return (
+    <Text
+      x={w / 2}
+      y={d / 2}
+      rotation={along + flip}
+      text={item.name}
+      width={long * 0.92}
+      offsetX={long * 0.46}
+      offsetY={fontSize / 2}
+      align="center"
+      wrap="none"
+      ellipsis
+      lineHeight={1}
+      fontSize={fontSize}
+      fontStyle="600"
+      fontFamily="system-ui, -apple-system, sans-serif"
+      fill="#222"
+      stroke="rgba(255,255,255,0.85)"
+      strokeWidth={fontSize * 0.28}
+      lineJoin="round"
+      fillAfterStrokeEnabled
+      listening={false}
+    />
   )
 }

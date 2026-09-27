@@ -7,6 +7,7 @@ import { DragGhost, LibraryPanel } from './components/LibraryPanel'
 import { PlanCanvas } from './components/PlanCanvas'
 import { FurnitureEditor } from './components/FurnitureEditor'
 import { CalibrationBar, SelectionBar, Toast } from './components/Overlays'
+import { PackDialog } from './components/PackDialog'
 
 const useHydrated = () =>
   useSyncExternalStore(
@@ -46,6 +47,7 @@ export default function App() {
         </main>
       </div>
       {editing && <FurnitureEditor key={editing} itemId={editing} />}
+      <PackDialog />
       <DragGhost />
       <Toast />
     </div>

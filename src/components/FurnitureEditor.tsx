@@ -56,12 +56,15 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
   )
   const placedIn = plans.filter((p) => p.placements.some((pl) => pl.itemId === itemId)).length
 
-  const valid = !!width && !!depth && count >= 1
+  const [triedSave, setTriedSave] = useState(false)
+  const missingName = !name.trim()
+  const valid = !missingName && !!width && !!depth && count >= 1
   const save = () => {
-    if (!width || !depth) return
+    setTriedSave(true)
+    if (!valid || !width || !depth) return
     const item: FurnitureItem = {
       id: existing?.id ?? newId(),
-      name: name.trim() || 'Untitled',
+      name: name.trim(),
       width,
       depth,
       count,
@@ -87,7 +90,18 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
           <div className="editor-form">
             <div className="field">
               <label htmlFor="item-name">Name</label>
-              <input id="item-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Grey sofa" autoFocus={!existing} />
+              <input
+                id="item-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Grey IKEA sofa"
+                autoFocus={!existing}
+                aria-invalid={triedSave && missingName}
+                className={triedSave && missingName ? 'invalid' : ''}
+              />
+              <div className={`hint ${triedSave && missingName ? 'warn' : ''}`}>
+                {triedSave && missingName ? 'Give it a name so you can tell pieces apart' : 'Shown on the floorplan, so pick something you’ll recognise'}
+              </div>
             </div>
 
             {!existing && (
@@ -176,7 +190,7 @@ export function FurnitureEditor({ itemId }: { itemId: string }) {
           <button className="btn" onClick={() => close(null)}>
             Cancel
           </button>
-          <button className="btn primary" disabled={!valid} onClick={save}>
+          <button className="btn primary" disabled={!width || !depth} onClick={save}>
             {existing ? 'Save' : 'Add to library'}
           </button>
         </footer>

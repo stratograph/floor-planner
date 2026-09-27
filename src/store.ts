@@ -16,11 +16,15 @@ export interface PersistedState {
   activePlanId: string | null
   units: Units
   floorplanOpacity: number
+  /** Show furniture names on the canvas (pieces without a sketch always show theirs). */
+  showLabels: boolean
 }
 
 interface Actions {
   saveItem: (item: FurnitureItem) => void
   deleteItem: (id: string) => void
+  /** Merge items from a furniture pack: same id replaces, new ids are added. */
+  importItems: (items: FurnitureItem[]) => void
   addPlan: (plan: Plan) => void
   renamePlan: (id: string, name: string) => void
   deletePlan: (id: string) => void
@@ -31,6 +35,7 @@ interface Actions {
   removePlacement: (id: string) => void
   setUnits: (units: Units) => void
   setFloorplanOpacity: (opacity: number) => void
+  setShowLabels: (show: boolean) => void
   replaceAll: (state: PersistedState) => void
 }
 
@@ -40,6 +45,7 @@ const initial: PersistedState = {
   activePlanId: null,
   units: 'metric',
   floorplanOpacity: 1,
+  showLabels: true,
 }
 
 const mapActivePlan = (s: PersistedState, fn: (p: Plan) => Plan) => ({
@@ -63,6 +69,14 @@ export const useStore = create<PersistedState & Actions>()(
           library: s.library.filter((i) => i.id !== id),
           plans: s.plans.map((p) => ({ ...p, placements: p.placements.filter((pl) => pl.itemId !== id) })),
         })),
+
+      importItems: (items) =>
+        setState((s) => {
+          const incoming = new Map(items.map((i) => [i.id, i]))
+          const library = s.library.map((i) => incoming.get(i.id) ?? i)
+          const existing = new Set(s.library.map((i) => i.id))
+          return { library: [...library, ...items.filter((i) => !existing.has(i.id))] }
+        }),
 
       addPlan: (plan) => setState((s) => ({ plans: [...s.plans, plan], activePlanId: plan.id })),
 
@@ -111,18 +125,20 @@ export const useStore = create<PersistedState & Actions>()(
 
       setUnits: (units) => setState({ units }),
       setFloorplanOpacity: (floorplanOpacity) => setState({ floorplanOpacity }),
+      setShowLabels: (showLabels) => setState({ showLabels }),
       replaceAll: (state) => setState({ ...initial, ...state }),
     }),
     {
       name: 'floorplan-state',
       version: 1,
       storage: createJSONStorage(() => idbStorage),
-      partialize: ({ library, plans, activePlanId, units, floorplanOpacity }) => ({
+      partialize: ({ library, plans, activePlanId, units, floorplanOpacity, showLabels }) => ({
         library,
         plans,
         activePlanId,
         units,
         floorplanOpacity,
+        showLabels,
       }),
     },
   ),
@@ -131,6 +147,6 @@ export const useStore = create<PersistedState & Actions>()(
 export const useActivePlan = () => useStore((s) => s.plans.find((p) => p.id === s.activePlanId) ?? null)
 
 export function snapshot(): PersistedState {
-  const { library, plans, activePlanId, units, floorplanOpacity } = useStore.getState()
-  return { library, plans, activePlanId, units, floorplanOpacity }
+  const { library, plans, activePlanId, units, floorplanOpacity, showLabels } = useStore.getState()
+  return { library, plans, activePlanId, units, floorplanOpacity, showLabels }
 }

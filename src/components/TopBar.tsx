@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useActivePlan, useStore } from '../store'
 import { useUi } from '../uiStore'
-import { importFloorplan, removePlan, startCalibration } from '../lib/actions'
+import { importFloorplan, planLabel, removePlan, startCalibration } from '../lib/actions'
 import { exportBackup, importBackup } from '../lib/backup'
 
 export function TopBar() {
@@ -11,6 +11,8 @@ export function TopBar() {
   const setUnits = useStore((s) => s.setUnits)
   const opacity = useStore((s) => s.floorplanOpacity)
   const setOpacity = useStore((s) => s.setFloorplanOpacity)
+  const showLabels = useStore((s) => s.showLabels)
+  const setShowLabels = useStore((s) => s.setShowLabels)
   const setActivePlan = useStore((s) => s.setActivePlan)
   const renamePlan = useStore((s) => s.renamePlan)
   const mode = useUi((s) => s.mode)
@@ -59,7 +61,7 @@ export function TopBar() {
             >
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {planLabel(p)}
                 </option>
               ))}
             </select>
@@ -93,6 +95,9 @@ export function TopBar() {
             <span aria-hidden>◐</span>
             <input type="range" min={0.15} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} aria-label="Floorplan opacity" />
           </label>
+          <button className={`btn small toggle ${showLabels ? 'on' : ''}`} aria-pressed={showLabels} onClick={() => setShowLabels(!showLabels)}>
+            Labels
+          </button>
           <button className="btn small" onClick={() => startCalibration(plan)}>
             Scale
           </button>
@@ -151,7 +156,7 @@ export function TopBar() {
                     removePlan(plan.id)
                   }}
                 >
-                  {confirmDelete ? `Really delete “${plan.name}”?` : 'Delete floorplan'}
+                  {confirmDelete ? `Really delete “${planLabel(plan)}”?` : 'Delete floorplan'}
                 </button>
               )}
             </div>
