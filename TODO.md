@@ -11,3 +11,6 @@
   - The in-progress stroke's outline is recomputed from all its points on every move (perfect-freehand `getStroke`), which gets slower as a stroke gets longer
   - `streamline`/`smoothing` settings may add visible lag behind the Pencil tip
   - Check coalesced events and pressure handling on iPad (`getCoalescedEvents`, pressure 0 at stroke start)
+- [ ] Update the rotation snapping logic (details to be decided)
+- [ ] Placement priority: sort the "Left to place" list so big pieces come before rugs, chairs, etc. (by size, or a priority set per piece)
+- [ ] Layer order for placed furniture: bring forward / send backward / bring to front / send to back (e.g. a rug under a table)
