@@ -18,8 +18,8 @@ export interface PersistedState {
   floorplanOpacity: number
   /** Show furniture names on the canvas (pieces without a sketch always show theirs). */
   showLabels: boolean
-  /** Priority groups folded away in the furniture list. */
-  collapsedPriorities: number[]
+  /** Furniture list sections folded away: 'priority-<n>' or 'placed'. */
+  collapsedGroups: string[]
 }
 
 interface Actions {
@@ -38,7 +38,7 @@ interface Actions {
   setUnits: (units: Units) => void
   setFloorplanOpacity: (opacity: number) => void
   setShowLabels: (show: boolean) => void
-  togglePriorityCollapsed: (priority: number) => void
+  toggleGroupCollapsed: (key: string) => void
   replaceAll: (state: PersistedState) => void
 }
 
@@ -49,7 +49,7 @@ const initial: PersistedState = {
   units: 'metric',
   floorplanOpacity: 1,
   showLabels: true,
-  collapsedPriorities: [],
+  collapsedGroups: [],
 }
 
 const mapActivePlan = (s: PersistedState, fn: (p: Plan) => Plan) => ({
@@ -130,11 +130,11 @@ export const useStore = create<PersistedState & Actions>()(
       setUnits: (units) => setState({ units }),
       setFloorplanOpacity: (floorplanOpacity) => setState({ floorplanOpacity }),
       setShowLabels: (showLabels) => setState({ showLabels }),
-      togglePriorityCollapsed: (p) =>
+      toggleGroupCollapsed: (key) =>
         setState((s) => ({
-          collapsedPriorities: s.collapsedPriorities.includes(p)
-            ? s.collapsedPriorities.filter((x) => x !== p)
-            : [...s.collapsedPriorities, p],
+          collapsedGroups: s.collapsedGroups.includes(key)
+            ? s.collapsedGroups.filter((k) => k !== key)
+            : [...s.collapsedGroups, key],
         })),
       replaceAll: (state) => setState({ ...initial, ...state }),
     }),
@@ -142,14 +142,14 @@ export const useStore = create<PersistedState & Actions>()(
       name: 'floorplan-state',
       version: 1,
       storage: createJSONStorage(() => idbStorage),
-      partialize: ({ library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedPriorities }) => ({
+      partialize: ({ library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedGroups }) => ({
         library,
         plans,
         activePlanId,
         units,
         floorplanOpacity,
         showLabels,
-        collapsedPriorities,
+        collapsedGroups,
       }),
     },
   ),
@@ -158,6 +158,6 @@ export const useStore = create<PersistedState & Actions>()(
 export const useActivePlan = () => useStore((s) => s.plans.find((p) => p.id === s.activePlanId) ?? null)
 
 export function snapshot(): PersistedState {
-  const { library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedPriorities } = useStore.getState()
-  return { library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedPriorities }
+  const { library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedGroups } = useStore.getState()
+  return { library, plans, activePlanId, units, floorplanOpacity, showLabels, collapsedGroups }
 }

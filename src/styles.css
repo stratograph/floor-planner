@@ -1003,10 +1003,13 @@ h3 {
   cursor: pointer;
 }
 
-.priority-group h4 {
+.group-toggle {
   margin: 4px 0 2px;
 }
-.priority-group h4 button {
+.library-scroll h3.group-toggle {
+  margin: 12px 0 4px;
+}
+.group-toggle button {
   width: 100%;
   display: flex;
   align-items: center;
@@ -1016,26 +1019,47 @@ h3 {
   border: none;
   background: none;
   border-radius: 8px;
+  font: inherit;
+  text-align: left;
+}
+.group-toggle.priority button {
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
-  text-align: left;
 }
-.priority-group h4 button:hover {
+.group-toggle.section button {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.group-toggle button:hover {
   background: #f3f2ee;
 }
-.priority-group .chevron {
+.group-toggle .chevron {
   flex-shrink: 0;
   transition: transform 0.15s;
 }
-.priority-group.open .chevron {
+.group-toggle.open .chevron {
   transform: rotate(90deg);
 }
 .group-count {
   margin-left: auto;
+  font-size: 12px;
   font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 .priority-group .cards {
   margin-bottom: 6px;
+}
+
+/* Segmented controls that fill a form field share the width equally. */
+.field > .seg {
+  display: flex;
+}
+.field > .seg button {
+  flex: 1;
 }

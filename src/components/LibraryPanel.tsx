@@ -20,8 +20,8 @@ export function LibraryPanel() {
   const select = useUi((s) => s.select)
   const showToast = useUi((s) => s.showToast)
   const setPackDialog = useUi((s) => s.setPackDialog)
-  const collapsed = useStore((s) => s.collapsedPriorities)
-  const toggleCollapsed = useStore((s) => s.togglePriorityCollapsed)
+  const collapsed = useStore((s) => s.collapsedGroups)
+  const toggleCollapsed = useStore((s) => s.toggleGroupCollapsed)
   const packFile = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -220,20 +220,15 @@ export function LibraryPanel() {
                   toPlaceGroups.map((p) => {
                     const groupRows = toPlace.filter((r) => priorityOf(r.item) === p)
                     const left = groupRows.reduce((n, r) => n + r.remaining, 0)
-                    const open = !collapsed.includes(p)
+                    const key = `priority-${p}`
+                    const open = !collapsed.includes(key)
                     return (
-                      <div key={p} className={`priority-group ${open ? 'open' : ''}`}>
-                        <h4>
-                          <button onClick={() => toggleCollapsed(p)} aria-expanded={open} aria-controls={`priority-${p}`}>
-                            <svg className="chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-                              <path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            Priority {p}
-                            <span className="group-count">{left} left</span>
-                          </button>
-                        </h4>
+                      <div key={p} className="priority-group">
+                        <GroupToggle id={key} open={open} onToggle={() => toggleCollapsed(key)} count={`${left} left`} className="priority">
+                          Priority {p}
+                        </GroupToggle>
                         {open && (
-                          <ul className="cards" id={`priority-${p}`}>
+                          <ul className="cards" id={key}>
                             {groupRows.map(renderCard)}
                           </ul>
                         )}
@@ -247,14 +242,52 @@ export function LibraryPanel() {
             )}
             {done.length > 0 && (
               <section>
-                <h3>All placed</h3>
-                <ul className="cards">{done.map(renderCard)}</ul>
+                <GroupToggle
+                  id="placed"
+                  open={!collapsed.includes('placed')}
+                  onToggle={() => toggleCollapsed('placed')}
+                  count={`${done.length} piece${done.length === 1 ? '' : 's'}`}
+                  className="section"
+                >
+                  All placed
+                </GroupToggle>
+                {!collapsed.includes('placed') && (
+                  <ul className="cards" id="placed">
+                    {done.map(renderCard)}
+                  </ul>
+                )}
               </section>
             )}
           </>
         )}
       </div>
     </aside>
+  )
+}
+
+interface GroupToggleProps {
+  id: string
+  open: boolean
+  onToggle: () => void
+  count: string
+  /** 'section' for top-level headings, 'priority' for groups inside "Left to place". */
+  className: string
+  children: React.ReactNode
+}
+
+/** A collapsible list heading with a chevron and a count that stays visible when folded. */
+function GroupToggle({ id, open, onToggle, count, className, children }: GroupToggleProps) {
+  const Heading = className === 'section' ? 'h3' : 'h4'
+  return (
+    <Heading className={`group-toggle ${className} ${open ? 'open' : ''}`}>
+      <button onClick={onToggle} aria-expanded={open} aria-controls={id}>
+        <svg className="chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {children}
+        <span className="group-count">{count}</span>
+      </button>
+    </Heading>
   )
 }
 
