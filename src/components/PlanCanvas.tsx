@@ -1,0 +1,506 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import Konva from 'konva'
+import { Circle, Group, Image as KImage, Layer, Line, Path, Rect, Stage, Text, Transformer } from 'react-konva'
+import type { FurnitureItem, Placement, Plan } from '../types'
+import { useStore } from '../store'
+import { useUi, type View } from '../uiStore'
+import { loadImageElement } from '../lib/images'
+import { strokePath } from '../lib/strokes'
+import { niceLength } from '../lib/units'
+
+// Let a second finger register while the first is dragging, so we can switch to pinch-zoom.
+Konva.hitOnDragEnabled = true
+
+const ROTATION_SNAPS = Array.from({ length: 72 }, (_, i) => i * 5)
+const MIN_SCALE = 0.01
+const MAX_SCALE = 60
+const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s))
+
+/** Normalise an angle to [0, 360) and snap it to 5°. */
+export const snapRotation = (deg: number) => (((Math.round(deg / 5) * 5) % 360) + 360) % 360
+
+function usePlanImage(planId: string) {
+  const [loaded, setLoaded] = useState<{ id: string; img: HTMLImageElement } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    setError(null)
+    loadImageElement(planId)
+      .then((img) => live && setLoaded({ id: planId, img }))
+      .catch((e: Error) => live && setError(e.message))
+    return () => {
+      live = false
+    }
+  }, [planId])
+  return { image: loaded?.id === planId ? loaded.img : null, error }
+}
+
+function zoomAround(view: View, sx: number, sy: number, nextScale: number): View {
+  const scale = clampScale(nextScale)
+  const wx = (sx - view.x) / view.scale
+  const wy = (sy - view.y) / view.scale
+  return { scale, x: sx - wx * scale, y: sy - wy * scale }
+}
+
+interface Props {
+  plan: Plan
+}
+
+export function PlanCanvas({ plan }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<Konva.Stage>(null)
+  const trRef = useRef<Konva.Transformer>(null)
+  const nodes = useRef(new Map<string, Konva.Group>())
+  const draggingNode = useRef<Konva.Group | null>(null)
+  const [size, setSize] = useState({ w: 0, h: 0 })
+
+  const view = useUi((s) => s.view)
+  const setView = useUi((s) => s.setView)
+  const mode = useUi((s) => s.mode)
+  const selectedId = useUi((s) => s.selectedId)
+  const select = useUi((s) => s.select)
+  const setCanvasEl = useUi((s) => s.setCanvasEl)
+  const calLine = useUi((s) => s.calLine)
+  const setCalLine = useUi((s) => s.setCalLine)
+
+  const library = useStore((s) => s.library)
+  const opacity = useStore((s) => s.floorplanOpacity)
+  const updatePlacement = useStore((s) => s.updatePlacement)
+  const removePlacement = useStore((s) => s.removePlacement)
+  const { image, error: imageError } = usePlanImage(plan.id)
+
+  const itemsById = useMemo(() => new Map(library.map((i) => [i.id, i])), [library])
+  // Until calibrated, one image pixel is drawn as one world unit.
+  const cmPerPx = plan.cmPerPx ?? 1
+
+  // ---- Size tracking -------------------------------------------------------
+  useLayoutEffect(() => {
+    const el = containerRef.current!
+    setCanvasEl(el)
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      setCanvasEl(null)
+    }
+  }, [setCanvasEl])
+
+  // ---- Fitting -------------------------------------------------------------
+  const fit = useCallback(() => {
+    if (!image || !size.w || !size.h) return
+    const w = image.naturalWidth * cmPerPx
+    const h = image.naturalHeight * cmPerPx
+    const pad = 40
+    const scale = clampScale(Math.min((size.w - pad * 2) / w, (size.h - pad * 2) / h))
+    setView({ scale, x: (size.w - w * scale) / 2, y: (size.h - h * scale) / 2 })
+  }, [image, size.w, size.h, cmPerPx, setView])
+
+  const fittedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (image && size.w && fittedFor.current !== plan.id) {
+      fittedFor.current = plan.id
+      fit()
+    }
+  }, [image, size.w, plan.id, fit])
+
+  // When the scale changes (re-calibration), rescale the view so the floorplan doesn't jump.
+  const prevCmPerPx = useRef({ id: plan.id, cmPerPx })
+  useEffect(() => {
+    const prev = prevCmPerPx.current
+    if (prev.id === plan.id && prev.cmPerPx !== cmPerPx) {
+      const v = useUi.getState().view
+      setView({ ...v, scale: clampScale((v.scale * prev.cmPerPx) / cmPerPx) })
+    }
+    prevCmPerPx.current = { id: plan.id, cmPerPx }
+  }, [plan.id, cmPerPx, setView])
+
+  // ---- Selection / transformer --------------------------------------------
+  useEffect(() => {
+    const tr = trRef.current
+    if (!tr) return
+    const node = selectedId && mode === 'arrange' ? nodes.current.get(selectedId) : undefined
+    tr.nodes(node ? [node] : [])
+    tr.getLayer()?.batchDraw()
+  }, [selectedId, mode, plan.placements])
+
+  // ---- Gestures: pan, pinch, wheel, calibration line ------------------------
+  useEffect(() => {
+    const el = containerRef.current!
+    const pointers = new Map<number, { x: number; y: number }>()
+    let pan: { sx: number; sy: number; view: View; moved: boolean } | null = null
+    let pinch: { dist: number; cx: number; cy: number; view: View } | null = null
+    let draw: { id: number; prev: ReturnType<typeof useUi.getState>['calLine'] } | null = null
+
+    const local = (e: { clientX: number; clientY: number }) => {
+      const r = el.getBoundingClientRect()
+      return { x: e.clientX - r.left, y: e.clientY - r.top }
+    }
+    const toImagePx = (p: { x: number; y: number }) => {
+      const v = useUi.getState().view
+      const k = useStore.getState().plans.find((pl) => pl.id === plan.id)?.cmPerPx ?? 1
+      return { x: (p.x - v.x) / v.scale / k, y: (p.y - v.y) / v.scale / k }
+    }
+    const twoPointers = () => {
+      const [a, b] = [...pointers.values()]
+      return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }
+    }
+    const startPan = (p: { x: number; y: number }) => {
+      pan = { sx: p.x, sy: p.y, view: useUi.getState().view, moved: false }
+    }
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return
+      const p = local(e)
+      pointers.set(e.pointerId, p)
+      const ui = useUi.getState()
+
+      if (pointers.size === 2) {
+        // Second finger: whatever the first finger was doing becomes a pinch.
+        draggingNode.current?.stopDrag()
+        if (draw) {
+          ui.setCalLine(draw.prev)
+          draw = null
+        }
+        pan = null
+        pinch = { ...twoPointers(), view: ui.view }
+        return
+      }
+      if (pointers.size > 2) return
+
+      const stage = stageRef.current
+      const hit = stage?.getIntersection(p)
+      if (ui.mode === 'calibrate') {
+        if (hit?.hasName('cal-handle')) return // Konva drags the handle
+        if (e.pointerType === 'mouse' && e.button === 1) {
+          startPan(p)
+        } else {
+          const ip = toImagePx(p)
+          draw = { id: e.pointerId, prev: ui.calLine }
+          ui.setCalLine({ x1: ip.x, y1: ip.y, x2: ip.x, y2: ip.y })
+        }
+      } else if (!hit) {
+        startPan(p)
+      } else {
+        return
+      }
+      el.setPointerCapture?.(e.pointerId)
+    }
+
+    const onMove = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return
+      const p = local(e)
+      pointers.set(e.pointerId, p)
+      if (pinch && pointers.size >= 2) {
+        const { dist, cx, cy } = twoPointers()
+        const v = pinch.view
+        const scale = clampScale((v.scale * dist) / pinch.dist)
+        const wx = (pinch.cx - v.x) / v.scale
+        const wy = (pinch.cy - v.y) / v.scale
+        setView({ scale, x: cx - wx * scale, y: cy - wy * scale })
+      } else if (pan) {
+        const dx = p.x - pan.sx
+        const dy = p.y - pan.sy
+        if (Math.abs(dx) + Math.abs(dy) > 4) pan.moved = true
+        setView({ ...pan.view, x: pan.view.x + dx, y: pan.view.y + dy })
+      } else if (draw && draw.id === e.pointerId) {
+        const cur = useUi.getState().calLine
+        const ip = toImagePx(p)
+        if (cur) useUi.getState().setCalLine({ ...cur, x2: ip.x, y2: ip.y })
+      }
+    }
+
+    const onUp = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return
+      pointers.delete(e.pointerId)
+      if (pinch) {
+        if (pointers.size < 2) {
+          pinch = null
+          // Carry on panning with the remaining finger, without a jump.
+          const [rest] = [...pointers.values()]
+          if (rest && useUi.getState().mode === 'arrange') startPan(rest)
+          else if (rest) pan = { sx: rest.x, sy: rest.y, view: useUi.getState().view, moved: true }
+        }
+        return
+      }
+      if (pan) {
+        if (!pan.moved && e.type === 'pointerup') useUi.getState().select(null)
+        pan = null
+      }
+      if (draw && draw.id === e.pointerId) {
+        const cur = useUi.getState().calLine
+        const v = useUi.getState().view
+        const k = useStore.getState().plans.find((pl) => pl.id === plan.id)?.cmPerPx ?? 1
+        // Ignore taps: a line must be at least ~8 screen px long.
+        if (cur && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) * k * v.scale < 8) useUi.getState().setCalLine(draw.prev)
+        draw = null
+      }
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const v = useUi.getState().view
+      const p = local(e)
+      if (e.ctrlKey || e.metaKey) {
+        setView(zoomAround(v, p.x, p.y, v.scale * Math.exp(-e.deltaY * 0.01)))
+      } else {
+        setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY })
+      }
+    }
+
+    // Safari (macOS trackpad, iPad trackpad) reports pinches as gesture events.
+    // On touch screens pointer events already handle pinch, so only act when no pointers are down.
+    let gesture: { view: View } | null = null
+    const onGestureStart = (e: Event) => {
+      e.preventDefault()
+      gesture = { view: useUi.getState().view }
+    }
+    const onGestureChange = (e: Event) => {
+      e.preventDefault()
+      const ge = e as Event & { scale: number; clientX: number; clientY: number }
+      if (!gesture || pointers.size) return
+      const p = local(ge)
+      setView(zoomAround(gesture.view, p.x, p.y, gesture.view.scale * ge.scale))
+    }
+    const onGestureEnd = (e: Event) => {
+      e.preventDefault()
+      gesture = null
+    }
+
+    el.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('gesturestart', onGestureStart)
+    el.addEventListener('gesturechange', onGestureChange)
+    el.addEventListener('gestureend', onGestureEnd)
+    return () => {
+      el.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('gesturestart', onGestureStart)
+      el.removeEventListener('gesturechange', onGestureChange)
+      el.removeEventListener('gestureend', onGestureEnd)
+    }
+  }, [plan.id, setView])
+
+  // ---- Keyboard shortcuts --------------------------------------------------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return
+      const { selectedId: id, mode: m } = useUi.getState()
+      if (m !== 'arrange' || !id) return
+      const pl = useStore.getState().plans.find((p) => p.id === plan.id)?.placements.find((p) => p.id === id)
+      if (!pl) return
+      const step = e.shiftKey ? 10 : 1
+      const moves: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        removePlacement(id)
+        select(null)
+      } else if (e.key === 'Escape') select(null)
+      else if (e.key === 'r' || e.key === 'R') updatePlacement(id, { rotation: snapRotation(pl.rotation + (e.shiftKey ? -90 : 90)) })
+      else if (e.key === ']') updatePlacement(id, { rotation: snapRotation(pl.rotation + 5) })
+      else if (e.key === '[') updatePlacement(id, { rotation: snapRotation(pl.rotation - 5) })
+      else if (moves[e.key]) updatePlacement(id, { x: pl.x + moves[e.key][0], y: pl.y + moves[e.key][1] })
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [plan.id, removePlacement, select, updatePlacement])
+
+  const zoomBy = (factor: number) => setView(zoomAround(view, size.w / 2, size.h / 2, view.scale * factor))
+
+  const arranging = mode === 'arrange'
+  const handleR = 11 / view.scale
+
+  return (
+    <div className="canvas-wrap">
+      <div ref={containerRef} className={`canvas ${mode}`}>
+        {size.w > 0 && (
+          <Stage ref={stageRef} width={size.w} height={size.h} x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
+            <Layer listening={false}>
+              {image && (
+                <KImage
+                  image={image}
+                  width={image.naturalWidth * cmPerPx}
+                  height={image.naturalHeight * cmPerPx}
+                  opacity={mode === 'calibrate' ? 1 : opacity}
+                />
+              )}
+            </Layer>
+            <Layer listening={arranging} opacity={arranging ? 1 : 0.35}>
+              {plan.placements.map((pl) => {
+                const item = itemsById.get(pl.itemId)
+                if (!item) return null
+                return (
+                  <FurnitureNode
+                    key={pl.id}
+                    placement={pl}
+                    item={item}
+                    draggable={arranging}
+                    nodeRef={(n) => (n ? nodes.current.set(pl.id, n) : nodes.current.delete(pl.id))}
+                    onSelect={() => select(pl.id)}
+                    onDragStart={(n) => (draggingNode.current = n)}
+                    onDragEnd={(n) => {
+                      draggingNode.current = null
+                      updatePlacement(pl.id, { x: n.x(), y: n.y() })
+                    }}
+                  />
+                )
+              })}
+              <Transformer
+                ref={trRef}
+                resizeEnabled={false}
+                flipEnabled={false}
+                rotationSnaps={ROTATION_SNAPS}
+                rotationSnapTolerance={2.5}
+                rotateAnchorOffset={26}
+                anchorSize={22}
+                borderStroke="#2f5d50"
+                borderStrokeWidth={1.5}
+                padding={4}
+                anchorStyleFunc={(anchor) => {
+                  if (anchor.hasName('rotater')) {
+                    anchor.cornerRadius(11)
+                    anchor.fill('#2f5d50')
+                    anchor.stroke('#ffffff')
+                    anchor.strokeWidth(2)
+                    anchor.hitStrokeWidth(24)
+                  }
+                }}
+                onTransformEnd={() => {
+                  const node = trRef.current?.nodes()[0]
+                  const id = useUi.getState().selectedId
+                  if (!node || !id) return
+                  const rotation = snapRotation(node.rotation())
+                  node.rotation(rotation)
+                  updatePlacement(id, { rotation, x: node.x(), y: node.y() })
+                }}
+              />
+            </Layer>
+            {mode === 'calibrate' && calLine && (
+              <Layer>
+                <Line
+                  points={[calLine.x1 * cmPerPx, calLine.y1 * cmPerPx, calLine.x2 * cmPerPx, calLine.y2 * cmPerPx]}
+                  stroke="#e4572e"
+                  strokeWidth={3}
+                  strokeScaleEnabled={false}
+                  lineCap="round"
+                  listening={false}
+                />
+                {(['1', '2'] as const).map((end) => (
+                  <Group
+                    key={end}
+                    name="cal-handle"
+                    x={calLine[`x${end}`] * cmPerPx}
+                    y={calLine[`y${end}`] * cmPerPx}
+                    draggable
+                    onDragMove={(e) => {
+                      const cur = useUi.getState().calLine
+                      if (cur) setCalLine({ ...cur, [`x${end}`]: e.target.x() / cmPerPx, [`y${end}`]: e.target.y() / cmPerPx })
+                    }}
+                  >
+                    <Circle name="cal-handle" radius={handleR * 1.6} fill="rgba(228,87,46,0.18)" stroke="#e4572e" strokeWidth={1.5} strokeScaleEnabled={false} />
+                    <Circle name="cal-handle" radius={handleR * 0.22} fill="#e4572e" />
+                  </Group>
+                ))}
+              </Layer>
+            )}
+          </Stage>
+        )}
+        {!image && (
+          <div className="canvas-status">{imageError ? `Couldn't load floorplan image: ${imageError}` : 'Loading floorplan…'}</div>
+        )}
+      </div>
+      <div className="zoom-controls">
+        <button onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom out">−</button>
+        <button onClick={fit} aria-label="Fit floorplan" className="fit">Fit</button>
+        <button onClick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
+      </div>
+      {plan.cmPerPx && mode === 'arrange' && <ScaleBar scale={view.scale} />}
+    </div>
+  )
+}
+
+function ScaleBar({ scale }: { scale: number }) {
+  const units = useStore((s) => s.units)
+  const { cm, label } = niceLength(140 / scale, units)
+  return (
+    <div className="scale-bar" aria-label={`Scale: ${label}`}>
+      <div className="scale-bar-line" style={{ width: cm * scale }} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+interface NodeProps {
+  placement: Placement
+  item: FurnitureItem
+  draggable: boolean
+  nodeRef: (n: Konva.Group | null) => void
+  onSelect: () => void
+  onDragStart: (n: Konva.Group) => void
+  onDragEnd: (n: Konva.Group) => void
+}
+
+function FurnitureNode({ placement, item, draggable, nodeRef, onSelect, onDragStart, onDragEnd }: NodeProps) {
+  const { width: w, depth: d } = item
+  return (
+    <Group
+      ref={nodeRef}
+      x={placement.x}
+      y={placement.y}
+      rotation={placement.rotation}
+      offsetX={w / 2}
+      offsetY={d / 2}
+      draggable={draggable}
+      onPointerDown={onSelect}
+      onDragStart={(e) => onDragStart(e.target as unknown as Konva.Group)}
+      onDragEnd={(e) => onDragEnd(e.target as unknown as Konva.Group)}
+    >
+      <Rect
+        width={w}
+        height={d}
+        fill={item.fill}
+        stroke="#2b2b2b"
+        strokeWidth={1.5}
+        strokeScaleEnabled={false}
+        shadowColor="#000"
+        shadowOpacity={0.18}
+        shadowBlur={6}
+        shadowOffsetY={2}
+        shadowForStrokeEnabled={false}
+      />
+      <Group clipX={0} clipY={0} clipWidth={w} clipHeight={d} listening={false}>
+        {item.strokes.map((s, i) => (
+          <Path key={i} data={strokePath(s)} fill={s.color} stroke={s.color} strokeWidth={0.6} strokeScaleEnabled={false} />
+        ))}
+      </Group>
+      {item.strokes.length === 0 && (
+        <Text
+          text={item.name}
+          width={w}
+          height={d}
+          align="center"
+          verticalAlign="middle"
+          fontSize={Math.max(4, Math.min(w, d) / 5)}
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill="#333"
+          padding={Math.min(w, d) * 0.06}
+          listening={false}
+        />
+      )}
+    </Group>
+  )
+}
