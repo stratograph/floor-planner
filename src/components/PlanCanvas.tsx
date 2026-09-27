@@ -437,7 +437,7 @@ export function PlanCanvas({ plan }: Props) {
                     placement={pl}
                     item={item}
                     showLabel={showLabels}
-                    highlighted={selectedIds.length > 1 && selectedIds.includes(pl.id)}
+                    selected={arranging && selectedIds.includes(pl.id)}
                     draggable={arranging}
                     nodeRef={(n) => (n ? nodes.current.set(pl.id, n) : nodes.current.delete(pl.id))}
                     onPointerDown={(evt) => {
@@ -467,9 +467,10 @@ export function PlanCanvas({ plan }: Props) {
                 rotationSnapTolerance={2.5}
                 rotateAnchorOffset={26}
                 anchorSize={22}
-                borderStroke="#2f5d50"
-                borderStrokeWidth={1.5}
-                padding={4}
+                // No offset box: selected pieces are outlined on their real edges instead (see FurnitureNode),
+                // so it's clear what to line up against walls. The transformer only provides the rotate handle.
+                borderEnabled={false}
+                padding={0}
                 anchorStyleFunc={(anchor) => {
                   if (anchor.hasName('rotater')) {
                     anchor.cornerRadius(11)
@@ -627,8 +628,8 @@ interface NodeProps {
   placement: Placement
   item: FurnitureItem
   showLabel: boolean
-  /** Outline this piece as part of a multi-piece selection. */
-  highlighted: boolean
+  /** Selected: outlined on its exact edge and lifted with a deeper shadow. */
+  selected: boolean
   draggable: boolean
   nodeRef: (n: Konva.Group | null) => void
   onPointerDown: (evt: PointerEvent | MouseEvent | TouchEvent) => void
@@ -637,7 +638,7 @@ interface NodeProps {
   onDragEnd: (n: Konva.Group) => void
 }
 
-function FurnitureNode({ placement, item, showLabel, highlighted, draggable, nodeRef, onPointerDown, onTap, onDragStart, onDragEnd }: NodeProps) {
+function FurnitureNode({ placement, item, showLabel, selected, draggable, nodeRef, onPointerDown, onTap, onDragStart, onDragEnd }: NodeProps) {
   const { width: w, depth: d } = item
   return (
     <Group
@@ -658,14 +659,15 @@ function FurnitureNode({ placement, item, showLabel, highlighted, draggable, nod
         width={w}
         height={d}
         fill={item.fill}
-        stroke={highlighted ? '#2f5d50' : '#2b2b2b'}
-        strokeWidth={highlighted ? 3 : 1.5}
+        stroke={selected ? '#2f5d50' : '#2b2b2b'}
+        strokeWidth={selected ? 2 : 1.5}
         strokeScaleEnabled={false}
-        shadowColor="#000"
-        shadowOpacity={0.18}
-        shadowBlur={6}
-        shadowOffsetY={2}
-        shadowForStrokeEnabled={false}
+        shadowColor={selected ? '#0d2b22' : '#000'}
+        shadowOpacity={selected ? 0.45 : 0.18}
+        shadowBlur={selected ? 18 : 6}
+        shadowOffsetY={selected ? 6 : 2}
+        // Transparent pieces have no fill to cast from, so let the outline cast it when selected.
+        shadowForStrokeEnabled={selected}
       />
       <Group clipX={0} clipY={0} clipWidth={w} clipHeight={d} listening={false}>
         {item.strokes.map((s, i) => (
