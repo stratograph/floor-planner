@@ -5,6 +5,7 @@ import { useUi } from '../uiStore'
 import { formatDims, formatLength } from '../lib/units'
 import { LengthInput } from './LengthInput'
 import { snapRotation } from './PlanCanvas'
+import { hasFinePointer } from '../lib/snap'
 
 export function CalibrationBar({ plan }: { plan: Plan }) {
   const calLine = useUi((s) => s.calLine)
@@ -61,10 +62,14 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
         <p>
           Draw a line along something whose length is printed on the plan — ideally a long room dimension. Pinch or use the
           zoom buttons for precision.
+          <SnapHint />
         </p>
       ) : (
         <>
-          <p>Drag the end points to fine-tune, then enter how long that line is.</p>
+          <p>
+            Drag the end points to fine-tune, then enter how long that line is.
+            <SnapHint />
+          </p>
           <div className="calibration-row">
             <LengthInput
               label="Line length"
@@ -90,11 +95,19 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
   )
 }
 
+/** Lines snap to 45° steps; on a mouse/trackpad device, say how to turn that off. */
+function SnapHint() {
+  return hasFinePointer() ? <span className="snap-hint"> Snaps to 45° — hold Ctrl or ⌥ for any angle.</span> : null
+}
+
 export function MeasureBar() {
   const setMode = useUi((s) => s.setMode)
   return (
     <div className="overlay-card measure-bar">
-      <span>Drag across the plan to measure. Tap to clear.</span>
+      <span>
+        Drag across the plan to measure. Tap to clear.
+        <SnapHint />
+      </span>
       <button className="btn small primary" onClick={() => setMode('arrange')}>
         Done
       </button>

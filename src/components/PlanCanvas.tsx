@@ -7,6 +7,7 @@ import { useUi, type CalLine, type View } from '../uiStore'
 import { loadImageElement } from '../lib/images'
 import { strokePath } from '../lib/strokes'
 import { formatLength, niceLength } from '../lib/units'
+import { snapAngle } from '../lib/snap'
 
 // Let a second finger register while the first is dragging, so we can switch to pinch-zoom.
 Konva.hitOnDragEnabled = true
@@ -151,6 +152,10 @@ export function PlanCanvas({ plan }: Props) {
       const v = useUi.getState().view
       return { x: (p.x - v.x) / v.scale, y: (p.y - v.y) / v.scale }
     }
+    const snapTo = (line: { x1: number; y1: number }, p: { x: number; y: number }, e: PointerEvent) => {
+      const s = snapAngle(line.x1, line.y1, p.x, p.y, e)
+      return { x2: s.x, y2: s.y }
+    }
     const twoPointers = () => {
       const [a, b] = [...pointers.values()]
       return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }
@@ -228,19 +233,11 @@ export function PlanCanvas({ plan }: Props) {
       } else if (draw && draw.id === e.pointerId) {
         const cur = useUi.getState().calLine
         const ip = toImagePx(p)
-        if (cur) useUi.getState().setCalLine({ ...cur, x2: ip.x, y2: ip.y })
+        if (cur) useUi.getState().setCalLine({ ...cur, ...snapTo(cur, ip, e) })
       } else if (measure && measure.id === e.pointerId) {
         const cur = useUi.getState().measureLine
         if (!cur) return
-        let { x, y } = toWorld(p)
-        if (e.shiftKey) {
-          // Constrain to 45° steps.
-          const len = Math.hypot(x - cur.x1, y - cur.y1)
-          const a = Math.round(Math.atan2(y - cur.y1, x - cur.x1) / (Math.PI / 4)) * (Math.PI / 4)
-          x = cur.x1 + len * Math.cos(a)
-          y = cur.y1 + len * Math.sin(a)
-        }
-        useUi.getState().setMeasureLine({ ...cur, x2: x, y2: y })
+        useUi.getState().setMeasureLine({ ...cur, ...snapTo(cur, toWorld(p), e) })
       }
     }
 
@@ -309,6 +306,8 @@ export function PlanCanvas({ plan }: Props) {
       gesture = null
     }
 
+    const onContextMenu = (e: Event) => e.preventDefault()
+    el.addEventListener('contextmenu', onContextMenu)
     el.addEventListener('pointerdown', onDown)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -318,6 +317,7 @@ export function PlanCanvas({ plan }: Props) {
     el.addEventListener('gesturechange', onGestureChange)
     el.addEventListener('gestureend', onGestureEnd)
     return () => {
+      el.removeEventListener('contextmenu', onContextMenu)
       el.removeEventListener('pointerdown', onDown)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
@@ -459,7 +459,12 @@ export function PlanCanvas({ plan }: Props) {
                     draggable
                     onDragMove={(e) => {
                       const cur = useUi.getState().calLine
-                      if (cur) setCalLine({ ...cur, [`x${end}`]: e.target.x() / cmPerPx, [`y${end}`]: e.target.y() / cmPerPx })
+                      if (!cur) return
+                      // Snap relative to the other end of the line.
+                      const other = end === '1' ? { x: cur.x2, y: cur.y2 } : { x: cur.x1, y: cur.y1 }
+                      const s = snapAngle(other.x, other.y, e.target.x() / cmPerPx, e.target.y() / cmPerPx, e.evt)
+                      e.target.position({ x: s.x * cmPerPx, y: s.y * cmPerPx })
+                      setCalLine({ ...cur, [`x${end}`]: s.x, [`y${end}`]: s.y })
                     }}
                     onDragEnd={() => useUi.getState().markCalLineDrawn()}
                   >

@@ -1078,3 +1078,7 @@ h3 {
   color: var(--muted);
   white-space: nowrap;
 }
+.snap-hint {
+  color: var(--muted);
+  opacity: 0.85;
+}
