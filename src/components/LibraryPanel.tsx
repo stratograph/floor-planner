@@ -302,7 +302,7 @@ export function DragGhost() {
   const size = overCanvas ? { w: item.width * scale, h: item.depth * scale } : undefined
   return (
     <div className={`drag-ghost ${overCanvas ? 'over' : ''}`} style={{ left: drag.clientX, top: drag.clientY }}>
-      <ItemThumb item={item} size={size} box={72} showName />
+      <ItemThumb item={item} size={size} box={72} showName asOnCanvas={overCanvas} />
     </div>
   )
 }

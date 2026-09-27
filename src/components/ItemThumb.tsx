@@ -8,9 +8,12 @@ interface Props {
   /** Or render at an explicit pixel size. */
   size?: { w: number; h: number }
   showName?: boolean
+  /** Render exactly as on the canvas: no outline at all for transparent pieces. */
+  asOnCanvas?: boolean
 }
 
-export function ItemThumb({ item, box = 56, size, showName }: Props) {
+export function ItemThumb({ item, box = 56, size, showName, asOnCanvas }: Props) {
+  const transparent = item.fill === 'transparent'
   const { width: w, depth: d } = item
   const k = size ? 1 : box / Math.max(w, d)
   const pw = size?.w ?? w * k
@@ -33,7 +36,14 @@ export function ItemThumb({ item, box = 56, size, showName }: Props) {
           {item.name}
         </text>
       )}
-      <rect width={w} height={d} fill="none" stroke="#2b2b2b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      {!transparent ? (
+        <rect width={w} height={d} fill="none" stroke="#2b2b2b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      ) : (
+        // In lists, a faint dashed outline keeps transparent pieces findable.
+        !asOnCanvas && (
+          <rect width={w} height={d} fill="none" stroke="#9a9a9a" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        )
+      )}
     </svg>
   )
 }

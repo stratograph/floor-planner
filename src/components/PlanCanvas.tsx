@@ -675,7 +675,8 @@ function FurnitureNode({ placement, item, showLabel, selected, draggable, nodeRe
         width={w}
         height={d}
         fill={item.fill}
-        stroke={selected ? '#2f5d50' : '#2b2b2b'}
+        // Transparent pieces have no outline (just their sketch) unless selected.
+        stroke={selected ? '#2f5d50' : item.fill === 'transparent' ? undefined : '#2b2b2b'}
         strokeWidth={selected ? 2 : 1.5}
         strokeScaleEnabled={false}
         shadowColor={selected ? '#0d2b22' : '#000'}
