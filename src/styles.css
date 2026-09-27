@@ -1004,11 +1004,38 @@ h3 {
 }
 
 .priority-group h4 {
-  margin: 10px 4px 6px;
-  font-size: 12px;
+  margin: 4px 0 2px;
+}
+.priority-group h4 button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--accent);
+  text-align: left;
 }
-h3 + .priority-group h4 {
-  margin-top: 0;
+.priority-group h4 button:hover {
+  background: #f3f2ee;
+}
+.priority-group .chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.priority-group.open .chevron {
+  transform: rotate(90deg);
+}
+.group-count {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--muted);
+}
+.priority-group .cards {
+  margin-bottom: 6px;
 }

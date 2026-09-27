@@ -20,6 +20,8 @@ export function LibraryPanel() {
   const select = useUi((s) => s.select)
   const showToast = useUi((s) => s.showToast)
   const setPackDialog = useUi((s) => s.setPackDialog)
+  const collapsed = useStore((s) => s.collapsedPriorities)
+  const toggleCollapsed = useStore((s) => s.togglePriorityCollapsed)
   const packFile = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -215,12 +217,29 @@ export function LibraryPanel() {
               <section>
                 <h3>{plan ? 'Left to place' : 'Library'}</h3>
                 {grouped ? (
-                  toPlaceGroups.map((p) => (
-                    <div key={p} className="priority-group">
-                      <h4>Priority {p}</h4>
-                      <ul className="cards">{toPlace.filter((r) => priorityOf(r.item) === p).map(renderCard)}</ul>
-                    </div>
-                  ))
+                  toPlaceGroups.map((p) => {
+                    const groupRows = toPlace.filter((r) => priorityOf(r.item) === p)
+                    const left = groupRows.reduce((n, r) => n + r.remaining, 0)
+                    const open = !collapsed.includes(p)
+                    return (
+                      <div key={p} className={`priority-group ${open ? 'open' : ''}`}>
+                        <h4>
+                          <button onClick={() => toggleCollapsed(p)} aria-expanded={open} aria-controls={`priority-${p}`}>
+                            <svg className="chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+                              <path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Priority {p}
+                            <span className="group-count">{left} left</span>
+                          </button>
+                        </h4>
+                        {open && (
+                          <ul className="cards" id={`priority-${p}`}>
+                            {groupRows.map(renderCard)}
+                          </ul>
+                        )}
+                      </div>
+                    )
+                  })
                 ) : (
                   <ul className="cards">{toPlace.map(renderCard)}</ul>
                 )}
