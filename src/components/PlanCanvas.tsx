@@ -384,7 +384,8 @@ export function PlanCanvas({ plan }: Props) {
       const pls = store.plans.find((p) => p.id === plan.id)?.placements.filter((p) => ids.includes(p.id)) ?? []
       if (!pls.length) return
       const items = new Map(store.library.map((i) => [i.id, i]))
-      const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d))
+      const key = ids.join()
+      const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d), { coalesce: `rotate:${key}` })
       const step = e.shiftKey ? 10 : 1
       const moves: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0],
@@ -399,7 +400,11 @@ export function PlanCanvas({ plan }: Props) {
       else if (e.key === 'r' || e.key === 'R') rotate(e.shiftKey ? -90 : 90)
       else if (e.key === ']') rotate(5)
       else if (e.key === '[') rotate(-5)
-      else if (moves[e.key]) updatePlacements(pls.map((pl) => ({ id: pl.id, x: pl.x + moves[e.key][0], y: pl.y + moves[e.key][1] })))
+      else if (moves[e.key])
+        updatePlacements(
+          pls.map((pl) => ({ id: pl.id, x: pl.x + moves[e.key][0], y: pl.y + moves[e.key][1] })),
+          { coalesce: `nudge:${key}` },
+        )
       else return
       e.preventDefault()
     }
@@ -455,7 +460,18 @@ export function PlanCanvas({ plan }: Props) {
                       // Don't drag a piece that was just toggled out of the selection.
                       if (!useUi.getState().selectedIds.includes(pl.id)) n.stopDrag()
                     }}
-                    onDragEnd={(n) => updatePlacement(pl.id, { x: n.x(), y: n.y() })}
+                    onDragEnd={(n) => {
+                      // Dragging one piece of a group moves them all; save the whole group as one step.
+                      const ids = useUi.getState().selectedIds
+                      if (ids.length > 1 && ids.includes(pl.id)) {
+                        updatePlacements(
+                          ids.flatMap((id) => {
+                            const node = nodes.current.get(id)
+                            return node ? [{ id, x: node.x(), y: node.y() }] : []
+                          }),
+                        )
+                      } else updatePlacement(pl.id, { x: n.x(), y: n.y() })
+                    }}
                   />
                 )
               })}

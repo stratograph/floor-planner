@@ -1,8 +1,13 @@
-import { del, get, set } from 'idb-keyval'
+import { del, get, keys, set } from 'idb-keyval'
 
 // Floorplan images live in IndexedDB separately from the main state so that
 // saving a furniture move doesn't re-serialize multi-megabyte images.
-const key = (planId: string) => `plan-image:${planId}`
+const PREFIX = 'plan-image:'
+const key = (planId: string) => `${PREFIX}${planId}`
+
+export async function listImagePlanIds(): Promise<string[]> {
+  return (await keys()).filter((k): k is string => typeof k === 'string' && k.startsWith(PREFIX)).map((k) => k.slice(PREFIX.length))
+}
 
 const elements = new Map<string, Promise<HTMLImageElement>>()
 

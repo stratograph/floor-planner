@@ -37,8 +37,9 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
   const apply = () => {
     if (!calLine || !lengthCm || !canApply) return
     const cmPerPx = lengthCm / linePx
-    renamePlan(plan.id, name.trim())
+    // Same tick, so both form one undo step, labelled by the first ("Set scale").
     calibratePlan(plan.id, { ...calLine, lengthCm }, cmPerPx)
+    renamePlan(plan.id, name.trim())
     setMode('arrange')
     const w = formatLength(plan.imageWidth * cmPerPx, units)
     const h = formatLength(plan.imageHeight * cmPerPx, units)
@@ -141,7 +142,8 @@ export function SelectionBar({ plan }: { plan: Plan }) {
 
   const single = pls.length === 1 ? pls[0] : null
   const item = single && items.get(single.itemId)!
-  const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d))
+  // Quick repeated taps (e.g. ↻5° six times) undo as one step.
+  const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d), { coalesce: `rotate:${selectedIds.join()}` })
 
   return (
     <div className="overlay-card selection">

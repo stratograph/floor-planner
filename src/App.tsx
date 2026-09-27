@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useActivePlan, useStore } from './store'
 import { useUi } from './uiStore'
-import { importFloorplan } from './lib/actions'
+import { cleanUpOrphanImages, importFloorplan, redo, undo } from './lib/actions'
 import { TopBar } from './components/TopBar'
 import { DragGhost, LibraryPanel } from './components/LibraryPanel'
 import { PlanCanvas } from './components/PlanCanvas'
@@ -21,6 +21,29 @@ export default function App() {
   const mode = useUi((s) => s.mode)
   const setMode = useUi((s) => s.setMode)
   const editing = useUi((s) => s.editing)
+
+  // Tidy up images left behind by floorplans deleted in earlier sessions (kept until then so deletion can be undone).
+  useEffect(() => {
+    if (hydrated) cleanUpOrphanImages().catch(() => {})
+  }, [hydrated])
+
+  // Undo / redo shortcuts: ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k !== 'z' && k !== 'y') return
+      // Leave text fields their own undo, and don't undo behind an open dialog.
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return
+      const ui = useUi.getState()
+      if (ui.editing || ui.packDialog) return
+      e.preventDefault()
+      if (k === 'y' || e.shiftKey) redo()
+      else undo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // An uncalibrated floorplan can only be calibrated.
   useEffect(() => {

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useActivePlan, useStore } from '../store'
 import { useUi } from '../uiStore'
-import { importFloorplan, planLabel, removePlan, startCalibration } from '../lib/actions'
+import { importFloorplan, planLabel, redo, removePlan, startCalibration, undo } from '../lib/actions'
+import { useHistory } from '../history'
 import { exportBackup, importBackup } from '../lib/backup'
 
 export function TopBar() {
@@ -17,6 +18,8 @@ export function TopBar() {
   const renamePlan = useStore((s) => s.renamePlan)
   const mode = useUi((s) => s.mode)
   const setMode = useUi((s) => s.setMode)
+  const canUndo = useHistory((s) => s.canUndo)
+  const canRedo = useHistory((s) => s.canRedo)
   const multiSelect = useUi((s) => s.multiSelect)
   const setMultiSelect = useUi((s) => s.setMultiSelect)
   const showToast = useUi((s) => s.showToast)
@@ -37,6 +40,19 @@ export function TopBar() {
       <div className="brand">
         <img src="./icon.svg" alt="" width={26} height={26} />
         <span>Floorplan</span>
+      </div>
+
+      <div className="history-btns">
+        <button className="icon-btn" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo (⌘Z)">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+            <path d="M7 4L3 8l4 4M3 8h8a4 4 0 010 8H9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button className="icon-btn" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo (⇧⌘Z)">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+            <path d="M11 4l4 4-4 4M15 8H7a4 4 0 000 8h2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
 
       <div className="plan-picker">

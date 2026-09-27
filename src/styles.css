@@ -1095,3 +1095,13 @@ h3 {
 .canvas.multi {
   cursor: crosshair;
 }
+
+.history-btns {
+  display: flex;
+  gap: 2px;
+}
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: none;
+}
