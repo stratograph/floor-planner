@@ -17,6 +17,8 @@ export function TopBar() {
   const renamePlan = useStore((s) => s.renamePlan)
   const mode = useUi((s) => s.mode)
   const setMode = useUi((s) => s.setMode)
+  const multiSelect = useUi((s) => s.multiSelect)
+  const setMultiSelect = useUi((s) => s.setMultiSelect)
   const showToast = useUi((s) => s.showToast)
 
   const planFile = useRef<HTMLInputElement>(null)
@@ -91,6 +93,21 @@ export function TopBar() {
 
       {plan?.cmPerPx && mode !== 'calibrate' && (
         <>
+          <button
+            className={`btn small toggle ${multiSelect ? 'on' : ''}`}
+            aria-pressed={multiSelect}
+            onClick={() => {
+              if (mode !== 'arrange') setMode('arrange')
+              setMultiSelect(!multiSelect)
+            }}
+            title="Select several pieces (or Shift-click / Shift-drag)"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+              <rect x="1.5" y="1.5" width="8" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="2 1.6" />
+              <rect x="6.5" y="6.5" width="8" height="8" rx="1" fill="currentColor" opacity="0.35" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+            Select
+          </button>
           <button
             className={`btn small toggle ${mode === 'measure' ? 'on' : ''}`}
             aria-pressed={mode === 'measure'}

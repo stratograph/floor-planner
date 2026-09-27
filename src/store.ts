@@ -35,6 +35,8 @@ interface Actions {
   addPlacement: (itemId: string, x: number, y: number, rotation?: number) => string
   updatePlacement: (id: string, patch: Partial<Omit<Placement, 'id' | 'itemId'>>) => void
   removePlacement: (id: string) => void
+  updatePlacements: (patches: (Partial<Omit<Placement, 'itemId'>> & { id: string })[]) => void
+  removePlacements: (ids: string[]) => void
   setUnits: (units: Units) => void
   setFloorplanOpacity: (opacity: number) => void
   setShowLabels: (show: boolean) => void
@@ -123,6 +125,19 @@ export const useStore = create<PersistedState & Actions>()(
             placements: p.placements.map((pl) => (pl.id === id ? { ...pl, ...patch } : pl)),
           })),
         ),
+
+      updatePlacements: (patches) => {
+        const byId = new Map(patches.map((p) => [p.id, p]))
+        setState((s) =>
+          mapActivePlan(s, (p) => ({
+            ...p,
+            placements: p.placements.map((pl) => (byId.has(pl.id) ? { ...pl, ...byId.get(pl.id) } : pl)),
+          })),
+        )
+      },
+
+      removePlacements: (ids) =>
+        setState((s) => mapActivePlan(s, (p) => ({ ...p, placements: p.placements.filter((pl) => !ids.includes(pl.id)) }))),
 
       removePlacement: (id) =>
         setState((s) => mapActivePlan(s, (p) => ({ ...p, placements: p.placements.filter((pl) => pl.id !== id) }))),

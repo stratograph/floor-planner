@@ -56,7 +56,8 @@ export function LibraryPanel() {
       if (canPlace) showToast('Drag onto the floorplan, or use + to drop one in the middle')
       return
     }
-    const current = copies.findIndex((p) => p.id === useUi.getState().selectedId)
+    const sel = useUi.getState().selectedIds
+    const current = sel.length === 1 ? copies.findIndex((p) => p.id === sel[0]) : -1
     select(copies[(current + 1) % copies.length].id)
   }
 

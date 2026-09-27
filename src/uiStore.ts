@@ -31,8 +31,15 @@ interface UiState {
   /** Bumped each time the user finishes drawing a calibration line. */
   calLineDrawn: number
   markCalLineDrawn: () => void
-  selectedId: string | null
+  /** Selected placements, in the order they were selected. */
+  selectedIds: string[]
+  /** Select just this one piece (or clear the selection with null). */
   select: (id: string | null) => void
+  setSelection: (ids: string[]) => void
+  toggleSelected: (id: string) => void
+  /** Touch-friendly multi-select: taps add/remove pieces and one-finger drags on empty floor draw a selection box. */
+  multiSelect: boolean
+  setMultiSelect: (on: boolean) => void
   /** The furniture item currently open in the editor ('new' for a fresh one). */
   editing: string | null
   setEditing: (id: string | null) => void
@@ -53,15 +60,20 @@ export const useUi = create<UiState>()((set) => ({
   view: { x: 0, y: 0, scale: 1 },
   setView: (view) => set({ view }),
   mode: 'arrange',
-  setMode: (mode) => set({ mode, selectedId: null, measureLine: null }),
+  setMode: (mode) => set({ mode, selectedIds: [], measureLine: null, multiSelect: false }),
   measureLine: null,
   setMeasureLine: (measureLine) => set({ measureLine }),
   calLine: null,
   setCalLine: (calLine) => set({ calLine }),
   calLineDrawn: 0,
   markCalLineDrawn: () => set((s) => ({ calLineDrawn: s.calLineDrawn + 1 })),
-  selectedId: null,
-  select: (selectedId) => set({ selectedId }),
+  selectedIds: [],
+  select: (id) => set({ selectedIds: id ? [id] : [] }),
+  setSelection: (selectedIds) => set({ selectedIds }),
+  toggleSelected: (id) =>
+    set((s) => ({ selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id] })),
+  multiSelect: false,
+  setMultiSelect: (multiSelect) => set({ multiSelect }),
   editing: null,
   setEditing: (editing) => set({ editing }),
   drag: null,

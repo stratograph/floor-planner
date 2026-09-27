@@ -8,6 +8,7 @@ import { loadImageElement } from '../lib/images'
 import { strokePath } from '../lib/strokes'
 import { formatLength, niceLength } from '../lib/units'
 import { snapAngle } from '../lib/snap'
+import { rotateGroup, snapRotation } from '../lib/group'
 
 // Let a second finger register while the first is dragging, so we can switch to pinch-zoom.
 Konva.hitOnDragEnabled = true
@@ -17,8 +18,6 @@ const MIN_SCALE = 0.01
 const MAX_SCALE = 60
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s))
 
-/** Normalise an angle to [0, 360) and snap it to 5°. */
-export const snapRotation = (deg: number) => (((Math.round(deg / 5) * 5) % 360) + 360) % 360
 
 function usePlanImage(planId: string) {
   const [loaded, setLoaded] = useState<{ id: string; img: HTMLImageElement } | null>(null)
@@ -52,14 +51,16 @@ export function PlanCanvas({ plan }: Props) {
   const stageRef = useRef<Konva.Stage>(null)
   const trRef = useRef<Konva.Transformer>(null)
   const nodes = useRef(new Map<string, Konva.Group>())
-  const draggingNode = useRef<Konva.Group | null>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
+  /** Selection box being dragged out, in container pixels. */
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
   const view = useUi((s) => s.view)
   const setView = useUi((s) => s.setView)
   const mode = useUi((s) => s.mode)
-  const selectedId = useUi((s) => s.selectedId)
+  const selectedIds = useUi((s) => s.selectedIds)
   const select = useUi((s) => s.select)
+  const multiSelect = useUi((s) => s.multiSelect)
   const setCanvasEl = useUi((s) => s.setCanvasEl)
   const calLine = useUi((s) => s.calLine)
   const measureLine = useUi((s) => s.measureLine)
@@ -70,7 +71,8 @@ export function PlanCanvas({ plan }: Props) {
   const opacity = useStore((s) => s.floorplanOpacity)
   const showLabels = useStore((s) => s.showLabels)
   const updatePlacement = useStore((s) => s.updatePlacement)
-  const removePlacement = useStore((s) => s.removePlacement)
+  const updatePlacements = useStore((s) => s.updatePlacements)
+  const removePlacements = useStore((s) => s.removePlacements)
   const { image, error: imageError } = usePlanImage(plan.id)
 
   const itemsById = useMemo(() => new Map(library.map((i) => [i.id, i])), [library])
@@ -125,10 +127,10 @@ export function PlanCanvas({ plan }: Props) {
   useEffect(() => {
     const tr = trRef.current
     if (!tr) return
-    const node = selectedId && mode === 'arrange' ? nodes.current.get(selectedId) : undefined
-    tr.nodes(node ? [node] : [])
+    const selected = mode === 'arrange' ? selectedIds.map((id) => nodes.current.get(id)).filter((n): n is Konva.Group => !!n) : []
+    tr.nodes(selected)
     tr.getLayer()?.batchDraw()
-  }, [selectedId, mode, plan.placements])
+  }, [selectedIds, mode, plan.placements])
 
   // ---- Gestures: pan, pinch, wheel, calibration line ------------------------
   useEffect(() => {
@@ -138,6 +140,8 @@ export function PlanCanvas({ plan }: Props) {
     let pinch: { dist: number; cx: number; cy: number; view: View } | null = null
     let draw: { id: number; prev: ReturnType<typeof useUi.getState>['calLine'] } | null = null
     let measure: { id: number } | null = null
+    let box: { id: number; x1: number; y1: number; additive: boolean; moved: boolean } | null = null
+    const stopDragging = () => nodes.current.forEach((n) => n.isDragging() && n.stopDrag())
 
     const local = (e: { clientX: number; clientY: number }) => {
       const r = el.getBoundingClientRect()
@@ -172,7 +176,11 @@ export function PlanCanvas({ plan }: Props) {
 
       if (pointers.size === 2) {
         // Second finger: whatever the first finger was doing becomes a pinch.
-        draggingNode.current?.stopDrag()
+        stopDragging()
+        if (box) {
+          setMarquee(null)
+          box = null
+        }
         if (draw) {
           ui.setCalLine(draw.prev)
           draw = null
@@ -206,6 +214,10 @@ export function PlanCanvas({ plan }: Props) {
           measure = { id: e.pointerId }
           ui.setMeasureLine({ x1: w.x, y1: w.y, x2: w.x, y2: w.y })
         }
+      } else if (!hit && (ui.multiSelect || e.shiftKey)) {
+        // Selection box. With Shift or in Select mode it adds to the current selection.
+        box = { id: e.pointerId, x1: p.x, y1: p.y, additive: true, moved: false }
+        setMarquee({ x1: p.x, y1: p.y, x2: p.x, y2: p.y })
       } else if (!hit) {
         startPan(p)
       } else {
@@ -238,6 +250,9 @@ export function PlanCanvas({ plan }: Props) {
         const cur = useUi.getState().calLine
         const ip = toImagePx(p)
         if (cur) useUi.getState().setCalLine({ ...cur, ...snapTo(cur, ip, e) })
+      } else if (box && box.id === e.pointerId) {
+        if (Math.abs(p.x - box.x1) + Math.abs(p.y - box.y1) > 4) box.moved = true
+        setMarquee({ x1: box.x1, y1: box.y1, x2: p.x, y2: p.y })
       } else if (measure && measure.id === e.pointerId) {
         const cur = useUi.getState().measureLine
         if (!cur) return
@@ -261,6 +276,23 @@ export function PlanCanvas({ plan }: Props) {
       if (pan) {
         if (!pan.moved && e.type === 'pointerup') useUi.getState().select(null)
         pan = null
+      }
+      if (box && box.id === e.pointerId) {
+        const ui = useUi.getState()
+        if (!box.moved) {
+          if (e.type === 'pointerup') ui.select(null)
+        } else if (e.type === 'pointerup') {
+          const p = local(e)
+          const r = { x1: Math.min(box.x1, p.x), y1: Math.min(box.y1, p.y), x2: Math.max(box.x1, p.x), y2: Math.max(box.y1, p.y) }
+          const hits: string[] = []
+          nodes.current.forEach((n, id) => {
+            const c = n.getClientRect() // container pixels, including the view transform
+            if (c.x < r.x2 && c.x + c.width > r.x1 && c.y < r.y2 && c.y + c.height > r.y1) hits.push(id)
+          })
+          ui.setSelection(box.additive ? [...new Set([...ui.selectedIds, ...hits])] : hits)
+        }
+        setMarquee(null)
+        box = null
       }
       if (draw && draw.id === e.pointerId) {
         const cur = useUi.getState().calLine
@@ -337,7 +369,7 @@ export function PlanCanvas({ plan }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return
-      const { selectedId: id, mode: m, setMode } = useUi.getState()
+      const { selectedIds: ids, mode: m, setMode } = useUi.getState()
       const calibrated = !!useStore.getState().plans.find((p) => p.id === plan.id)?.cmPerPx
       if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && calibrated && m !== 'calibrate') {
         setMode(m === 'measure' ? 'arrange' : 'measure')
@@ -347,9 +379,12 @@ export function PlanCanvas({ plan }: Props) {
         setMode('arrange')
         return
       }
-      if (m !== 'arrange' || !id) return
-      const pl = useStore.getState().plans.find((p) => p.id === plan.id)?.placements.find((p) => p.id === id)
-      if (!pl) return
+      if (m !== 'arrange' || !ids.length) return
+      const store = useStore.getState()
+      const pls = store.plans.find((p) => p.id === plan.id)?.placements.filter((p) => ids.includes(p.id)) ?? []
+      if (!pls.length) return
+      const items = new Map(store.library.map((i) => [i.id, i]))
+      const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d))
       const step = e.shiftKey ? 10 : 1
       const moves: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0],
@@ -358,19 +393,19 @@ export function PlanCanvas({ plan }: Props) {
         ArrowDown: [0, step],
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        removePlacement(id)
+        removePlacements(ids)
         select(null)
       } else if (e.key === 'Escape') select(null)
-      else if (e.key === 'r' || e.key === 'R') updatePlacement(id, { rotation: snapRotation(pl.rotation + (e.shiftKey ? -90 : 90)) })
-      else if (e.key === ']') updatePlacement(id, { rotation: snapRotation(pl.rotation + 5) })
-      else if (e.key === '[') updatePlacement(id, { rotation: snapRotation(pl.rotation - 5) })
-      else if (moves[e.key]) updatePlacement(id, { x: pl.x + moves[e.key][0], y: pl.y + moves[e.key][1] })
+      else if (e.key === 'r' || e.key === 'R') rotate(e.shiftKey ? -90 : 90)
+      else if (e.key === ']') rotate(5)
+      else if (e.key === '[') rotate(-5)
+      else if (moves[e.key]) updatePlacements(pls.map((pl) => ({ id: pl.id, x: pl.x + moves[e.key][0], y: pl.y + moves[e.key][1] })))
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [plan.id, removePlacement, select, updatePlacement])
+  }, [plan.id, removePlacements, select, updatePlacements])
 
   const zoomBy = (factor: number) => setView(zoomAround(view, size.w / 2, size.h / 2, view.scale * factor))
 
@@ -379,7 +414,7 @@ export function PlanCanvas({ plan }: Props) {
 
   return (
     <div className="canvas-wrap">
-      <div ref={containerRef} className={`canvas ${mode}`}>
+      <div ref={containerRef} className={`canvas ${mode} ${multiSelect ? 'multi' : ''}`}>
         {size.w > 0 && (
           <Stage ref={stageRef} width={size.w} height={size.h} x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
             <Layer listening={false}>
@@ -402,14 +437,25 @@ export function PlanCanvas({ plan }: Props) {
                     placement={pl}
                     item={item}
                     showLabel={showLabels}
+                    highlighted={selectedIds.length > 1 && selectedIds.includes(pl.id)}
                     draggable={arranging}
                     nodeRef={(n) => (n ? nodes.current.set(pl.id, n) : nodes.current.delete(pl.id))}
-                    onSelect={() => select(pl.id)}
-                    onDragStart={(n) => (draggingNode.current = n)}
-                    onDragEnd={(n) => {
-                      draggingNode.current = null
-                      updatePlacement(pl.id, { x: n.x(), y: n.y() })
+                    onPointerDown={(evt) => {
+                      const ui = useUi.getState()
+                      if (ui.multiSelect || evt.shiftKey || evt.metaKey || evt.ctrlKey) ui.toggleSelected(pl.id)
+                      // Pressing a piece that's already part of the selection keeps the group, so it can be dragged together.
+                      else if (!ui.selectedIds.includes(pl.id)) ui.select(pl.id)
                     }}
+                    onTap={(evt) => {
+                      // A plain tap (no drag) on one piece of a group narrows the selection to that piece.
+                      const ui = useUi.getState()
+                      if (!(ui.multiSelect || evt.shiftKey || evt.metaKey || evt.ctrlKey) && ui.selectedIds.length > 1) ui.select(pl.id)
+                    }}
+                    onDragStart={(n) => {
+                      // Don't drag a piece that was just toggled out of the selection.
+                      if (!useUi.getState().selectedIds.includes(pl.id)) n.stopDrag()
+                    }}
+                    onDragEnd={(n) => updatePlacement(pl.id, { x: n.x(), y: n.y() })}
                   />
                 )
               })}
@@ -434,12 +480,15 @@ export function PlanCanvas({ plan }: Props) {
                   }
                 }}
                 onTransformEnd={() => {
-                  const node = trRef.current?.nodes()[0]
-                  const id = useUi.getState().selectedId
-                  if (!node || !id) return
-                  const rotation = snapRotation(node.rotation())
-                  node.rotation(rotation)
-                  updatePlacement(id, { rotation, x: node.x(), y: node.y() })
+                  // Rotating a group moves and turns every piece in it.
+                  const patches = (trRef.current?.nodes() ?? []).flatMap((node) => {
+                    const id = [...nodes.current].find(([, n]) => n === node)?.[0]
+                    if (!id) return []
+                    const rotation = snapRotation(node.rotation())
+                    node.rotation(rotation)
+                    return [{ id, rotation, x: node.x(), y: node.y() }]
+                  })
+                  if (patches.length) updatePlacements(patches)
                 }}
               />
             </Layer>
@@ -479,6 +528,17 @@ export function PlanCanvas({ plan }: Props) {
               </Layer>
             )}
           </Stage>
+        )}
+        {marquee && (
+          <div
+            className="marquee"
+            style={{
+              left: Math.min(marquee.x1, marquee.x2),
+              top: Math.min(marquee.y1, marquee.y2),
+              width: Math.abs(marquee.x2 - marquee.x1),
+              height: Math.abs(marquee.y2 - marquee.y1),
+            }}
+          />
         )}
         {!image && (
           <div className="canvas-status">{imageError ? `Couldn't load floorplan image: ${imageError}` : 'Loading floorplan…'}</div>
@@ -567,14 +627,17 @@ interface NodeProps {
   placement: Placement
   item: FurnitureItem
   showLabel: boolean
+  /** Outline this piece as part of a multi-piece selection. */
+  highlighted: boolean
   draggable: boolean
   nodeRef: (n: Konva.Group | null) => void
-  onSelect: () => void
+  onPointerDown: (evt: PointerEvent | MouseEvent | TouchEvent) => void
+  onTap: (evt: PointerEvent | MouseEvent | TouchEvent) => void
   onDragStart: (n: Konva.Group) => void
   onDragEnd: (n: Konva.Group) => void
 }
 
-function FurnitureNode({ placement, item, showLabel, draggable, nodeRef, onSelect, onDragStart, onDragEnd }: NodeProps) {
+function FurnitureNode({ placement, item, showLabel, highlighted, draggable, nodeRef, onPointerDown, onTap, onDragStart, onDragEnd }: NodeProps) {
   const { width: w, depth: d } = item
   return (
     <Group
@@ -585,7 +648,9 @@ function FurnitureNode({ placement, item, showLabel, draggable, nodeRef, onSelec
       offsetX={w / 2}
       offsetY={d / 2}
       draggable={draggable}
-      onPointerDown={onSelect}
+      onPointerDown={(e) => onPointerDown(e.evt)}
+      onClick={(e) => onTap(e.evt)}
+      onTap={(e) => onTap(e.evt)}
       onDragStart={(e) => onDragStart(e.target as unknown as Konva.Group)}
       onDragEnd={(e) => onDragEnd(e.target as unknown as Konva.Group)}
     >
@@ -593,8 +658,8 @@ function FurnitureNode({ placement, item, showLabel, draggable, nodeRef, onSelec
         width={w}
         height={d}
         fill={item.fill}
-        stroke="#2b2b2b"
-        strokeWidth={1.5}
+        stroke={highlighted ? '#2f5d50' : '#2b2b2b'}
+        strokeWidth={highlighted ? 3 : 1.5}
         strokeScaleEnabled={false}
         shadowColor="#000"
         shadowOpacity={0.18}

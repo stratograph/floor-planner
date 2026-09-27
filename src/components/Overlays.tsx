@@ -4,7 +4,7 @@ import { useStore } from '../store'
 import { useUi } from '../uiStore'
 import { formatDims, formatLength } from '../lib/units'
 import { LengthInput } from './LengthInput'
-import { snapRotation } from './PlanCanvas'
+import { rotateGroup } from '../lib/group'
 import { hasFinePointer } from '../lib/snap'
 
 export function CalibrationBar({ plan }: { plan: Plan }) {
@@ -116,26 +116,49 @@ export function MeasureBar() {
 }
 
 export function SelectionBar({ plan }: { plan: Plan }) {
-  const selectedId = useUi((s) => s.selectedId)
+  const selectedIds = useUi((s) => s.selectedIds)
   const select = useUi((s) => s.select)
+  const multiSelect = useUi((s) => s.multiSelect)
+  const setMultiSelect = useUi((s) => s.setMultiSelect)
   const units = useStore((s) => s.units)
   const library = useStore((s) => s.library)
-  const updatePlacement = useStore((s) => s.updatePlacement)
-  const removePlacement = useStore((s) => s.removePlacement)
+  const updatePlacements = useStore((s) => s.updatePlacements)
+  const removePlacements = useStore((s) => s.removePlacements)
 
-  const pl = plan.placements.find((p) => p.id === selectedId)
-  const item = pl && library.find((i) => i.id === pl.itemId)
-  if (!pl || !item) return null
+  const items = new Map(library.map((i) => [i.id, i]))
+  const pls = plan.placements.filter((p) => selectedIds.includes(p.id) && items.has(p.itemId))
 
-  const rotate = (d: number) => updatePlacement(pl.id, { rotation: snapRotation(pl.rotation + d) })
+  if (!pls.length) {
+    return multiSelect ? (
+      <div className="overlay-card measure-bar">
+        <span>Tap pieces to select them, or drag a box around them.</span>
+        <button className="btn small primary" onClick={() => setMultiSelect(false)}>
+          Done
+        </button>
+      </div>
+    ) : null
+  }
+
+  const single = pls.length === 1 ? pls[0] : null
+  const item = single && items.get(single.itemId)!
+  const rotate = (d: number) => updatePlacements(rotateGroup(pls, items, d))
 
   return (
     <div className="overlay-card selection">
       <div className="selection-info">
-        <strong>{item.name}</strong>
-        <span>
-          {formatDims(item.width, item.depth, units)} · {pl.rotation}°
-        </span>
+        {single && item ? (
+          <>
+            <strong>{item.name}</strong>
+            <span>
+              {formatDims(item.width, item.depth, units)} · {single.rotation}°
+            </span>
+          </>
+        ) : (
+          <>
+            <strong>{pls.length} pieces selected</strong>
+            <span>Drag any of them to move the group</span>
+          </>
+        )}
       </div>
       <div className="selection-actions">
         <button className="btn small" onClick={() => rotate(-5)} aria-label="Rotate 5° anticlockwise">
@@ -150,12 +173,17 @@ export function SelectionBar({ plan }: { plan: Plan }) {
         <button
           className="btn small"
           onClick={() => {
-            removePlacement(pl.id)
+            removePlacements(pls.map((p) => p.id))
             select(null)
           }}
         >
-          Put back
+          Put back{pls.length > 1 ? ` ${pls.length}` : ''}
         </button>
+        {multiSelect && (
+          <button className="btn small primary" onClick={() => setMultiSelect(false)}>
+            Done
+          </button>
+        )}
       </div>
     </div>
   )

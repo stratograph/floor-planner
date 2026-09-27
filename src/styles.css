@@ -1082,3 +1082,16 @@ h3 {
   color: var(--muted);
   opacity: 0.85;
 }
+
+/* ---------- Multi-select ---------- */
+
+.marquee {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  background: rgba(47, 93, 80, 0.1);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.canvas.multi {
+  cursor: crosshair;
+}
