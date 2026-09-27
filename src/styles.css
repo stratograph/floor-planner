@@ -1063,3 +1063,18 @@ h3 {
 .field > .seg button {
   flex: 1;
 }
+
+/* ---------- Measure tool ---------- */
+
+.canvas.measure {
+  cursor: crosshair;
+}
+.measure-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 8px 8px 14px;
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}

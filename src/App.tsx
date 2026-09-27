@@ -6,7 +6,7 @@ import { TopBar } from './components/TopBar'
 import { DragGhost, LibraryPanel } from './components/LibraryPanel'
 import { PlanCanvas } from './components/PlanCanvas'
 import { FurnitureEditor } from './components/FurnitureEditor'
-import { CalibrationBar, SelectionBar, Toast } from './components/Overlays'
+import { CalibrationBar, MeasureBar, SelectionBar, Toast } from './components/Overlays'
 import { PackDialog } from './components/PackDialog'
 
 const useHydrated = () =>
@@ -39,7 +39,13 @@ export default function App() {
           {plan ? (
             <>
               <PlanCanvas key={plan.id} plan={plan} />
-              {mode === 'calibrate' ? <CalibrationBar key={`cal-${plan.id}`} plan={plan} /> : <SelectionBar plan={plan} />}
+              {mode === 'calibrate' ? (
+                <CalibrationBar key={`cal-${plan.id}`} plan={plan} />
+              ) : mode === 'measure' ? (
+                <MeasureBar />
+              ) : (
+                <SelectionBar plan={plan} />
+              )}
             </>
           ) : (
             <EmptyState />

@@ -90,6 +90,18 @@ export function CalibrationBar({ plan }: { plan: Plan }) {
   )
 }
 
+export function MeasureBar() {
+  const setMode = useUi((s) => s.setMode)
+  return (
+    <div className="overlay-card measure-bar">
+      <span>Drag across the plan to measure. Tap to clear.</span>
+      <button className="btn small primary" onClick={() => setMode('arrange')}>
+        Done
+      </button>
+    </div>
+  )
+}
+
 export function SelectionBar({ plan }: { plan: Plan }) {
   const selectedId = useUi((s) => s.selectedId)
   const select = useUi((s) => s.select)

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import { Circle, Group, Image as KImage, Layer, Line, Path, Rect, Stage, Text, Transformer } from 'react-konva'
-import type { FurnitureItem, Placement, Plan } from '../types'
+import type { FurnitureItem, Placement, Plan, Units } from '../types'
 import { useStore } from '../store'
-import { useUi, type View } from '../uiStore'
+import { useUi, type CalLine, type View } from '../uiStore'
 import { loadImageElement } from '../lib/images'
 import { strokePath } from '../lib/strokes'
-import { niceLength } from '../lib/units'
+import { formatLength, niceLength } from '../lib/units'
 
 // Let a second finger register while the first is dragging, so we can switch to pinch-zoom.
 Konva.hitOnDragEnabled = true
@@ -61,6 +61,8 @@ export function PlanCanvas({ plan }: Props) {
   const select = useUi((s) => s.select)
   const setCanvasEl = useUi((s) => s.setCanvasEl)
   const calLine = useUi((s) => s.calLine)
+  const measureLine = useUi((s) => s.measureLine)
+  const units = useStore((s) => s.units)
   const setCalLine = useUi((s) => s.setCalLine)
 
   const library = useStore((s) => s.library)
@@ -134,6 +136,7 @@ export function PlanCanvas({ plan }: Props) {
     let pan: { sx: number; sy: number; view: View; moved: boolean } | null = null
     let pinch: { dist: number; cx: number; cy: number; view: View } | null = null
     let draw: { id: number; prev: ReturnType<typeof useUi.getState>['calLine'] } | null = null
+    let measure: { id: number } | null = null
 
     const local = (e: { clientX: number; clientY: number }) => {
       const r = el.getBoundingClientRect()
@@ -143,6 +146,10 @@ export function PlanCanvas({ plan }: Props) {
       const v = useUi.getState().view
       const k = useStore.getState().plans.find((pl) => pl.id === plan.id)?.cmPerPx ?? 1
       return { x: (p.x - v.x) / v.scale / k, y: (p.y - v.y) / v.scale / k }
+    }
+    const toWorld = (p: { x: number; y: number }) => {
+      const v = useUi.getState().view
+      return { x: (p.x - v.x) / v.scale, y: (p.y - v.y) / v.scale }
     }
     const twoPointers = () => {
       const [a, b] = [...pointers.values()]
@@ -165,6 +172,10 @@ export function PlanCanvas({ plan }: Props) {
           ui.setCalLine(draw.prev)
           draw = null
         }
+        if (measure) {
+          ui.setMeasureLine(null)
+          measure = null
+        }
         pan = null
         pinch = { ...twoPointers(), view: ui.view }
         return
@@ -181,6 +192,14 @@ export function PlanCanvas({ plan }: Props) {
           const ip = toImagePx(p)
           draw = { id: e.pointerId, prev: ui.calLine }
           ui.setCalLine({ x1: ip.x, y1: ip.y, x2: ip.x, y2: ip.y })
+        }
+      } else if (ui.mode === 'measure') {
+        if (e.pointerType === 'mouse' && e.button === 1) {
+          startPan(p)
+        } else {
+          const w = toWorld(p)
+          measure = { id: e.pointerId }
+          ui.setMeasureLine({ x1: w.x, y1: w.y, x2: w.x, y2: w.y })
         }
       } else if (!hit) {
         startPan(p)
@@ -210,6 +229,18 @@ export function PlanCanvas({ plan }: Props) {
         const cur = useUi.getState().calLine
         const ip = toImagePx(p)
         if (cur) useUi.getState().setCalLine({ ...cur, x2: ip.x, y2: ip.y })
+      } else if (measure && measure.id === e.pointerId) {
+        const cur = useUi.getState().measureLine
+        if (!cur) return
+        let { x, y } = toWorld(p)
+        if (e.shiftKey) {
+          // Constrain to 45° steps.
+          const len = Math.hypot(x - cur.x1, y - cur.y1)
+          const a = Math.round(Math.atan2(y - cur.y1, x - cur.x1) / (Math.PI / 4)) * (Math.PI / 4)
+          x = cur.x1 + len * Math.cos(a)
+          y = cur.y1 + len * Math.sin(a)
+        }
+        useUi.getState().setMeasureLine({ ...cur, x2: x, y2: y })
       }
     }
 
@@ -238,6 +269,13 @@ export function PlanCanvas({ plan }: Props) {
         if (cur && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) * k * v.scale < 8) useUi.getState().setCalLine(draw.prev)
         else useUi.getState().markCalLineDrawn()
         draw = null
+      }
+      if (measure && measure.id === e.pointerId) {
+        const cur = useUi.getState().measureLine
+        const v = useUi.getState().view
+        // A tap (no real line) clears the measurement.
+        if (cur && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) * v.scale < 8) useUi.getState().setMeasureLine(null)
+        measure = null
       }
     }
 
@@ -295,7 +333,16 @@ export function PlanCanvas({ plan }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) return
-      const { selectedId: id, mode: m } = useUi.getState()
+      const { selectedId: id, mode: m, setMode } = useUi.getState()
+      const calibrated = !!useStore.getState().plans.find((p) => p.id === plan.id)?.cmPerPx
+      if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && calibrated && m !== 'calibrate') {
+        setMode(m === 'measure' ? 'arrange' : 'measure')
+        return
+      }
+      if (e.key === 'Escape' && m === 'measure') {
+        setMode('arrange')
+        return
+      }
       if (m !== 'arrange' || !id) return
       const pl = useStore.getState().plans.find((p) => p.id === plan.id)?.placements.find((p) => p.id === id)
       if (!pl) return
@@ -341,7 +388,7 @@ export function PlanCanvas({ plan }: Props) {
                 />
               )}
             </Layer>
-            <Layer listening={arranging} opacity={arranging ? 1 : 0.35}>
+            <Layer listening={arranging} opacity={mode === 'calibrate' ? 0.35 : 1}>
               {plan.placements.map((pl) => {
                 const item = itemsById.get(pl.itemId)
                 if (!item) return null
@@ -392,6 +439,7 @@ export function PlanCanvas({ plan }: Props) {
                 }}
               />
             </Layer>
+            {mode === 'measure' && measureLine && <MeasureLine line={measureLine} scale={view.scale} units={units} />}
             {mode === 'calibrate' && calLine && (
               <Layer>
                 <Line
@@ -432,8 +480,66 @@ export function PlanCanvas({ plan }: Props) {
         <button onClick={fit} aria-label="Fit floorplan" className="fit">Fit</button>
         <button onClick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
       </div>
-      {plan.cmPerPx && mode === 'arrange' && <ScaleBar scale={view.scale} />}
+      {plan.cmPerPx && mode !== 'calibrate' && <ScaleBar scale={view.scale} />}
     </div>
+  )
+}
+
+const MEASURE_COLOR = '#2c5d8f'
+const LABEL_W = 100
+
+/** The measuring tool's line: end ticks plus a length label that stays the same size on screen. */
+function MeasureLine({ line, scale, units }: { line: CalLine; scale: number; units: Units }) {
+  const { x1, y1, x2, y2 } = line
+  const length = Math.hypot(x2 - x1, y2 - y1)
+  const px = 1 / scale // one screen pixel, in world cm
+  // Unit normal, for the end ticks.
+  const nx = length ? -(y2 - y1) / length : 0
+  const ny = length ? (x2 - x1) / length : 1
+  const tick = 8 * px
+  // The normal that points up the screen (or right, for a horizontal-normal / vertical line).
+  const flipN = ny > 0 || (ny === 0 && nx < 0) ? -1 : 1
+  const labelNx = nx * flipN
+  const labelNy = ny * flipN
+  // Far enough along the normal that the label box clears the line at any angle (half-extent + 8px).
+  const labelGap = (LABEL_W / 2) * Math.abs(labelNx) + 14 * Math.abs(labelNy) + 8
+  return (
+    <Layer listening={false}>
+      <Line points={[x1, y1, x2, y2]} stroke="#fff" strokeWidth={5} strokeScaleEnabled={false} lineCap="round" opacity={0.8} />
+      <Line points={[x1, y1, x2, y2]} stroke={MEASURE_COLOR} strokeWidth={2} strokeScaleEnabled={false} dash={[6 * px, 4 * px]} lineCap="round" />
+      {[
+        [x1, y1],
+        [x2, y2],
+      ].map(([x, y], i) => (
+        <Line
+          key={i}
+          points={[x - nx * tick, y - ny * tick, x + nx * tick, y + ny * tick]}
+          stroke={MEASURE_COLOR}
+          strokeWidth={2}
+          strokeScaleEnabled={false}
+          lineCap="round"
+        />
+      ))}
+      {length * scale >= 8 && (
+        // Beside the middle of the line (on its upper side) so the finger at the end doesn't cover it.
+        <Group x={(x1 + x2) / 2 + labelNx * labelGap * px} y={(y1 + y2) / 2 + labelNy * labelGap * px} scaleX={px} scaleY={px}>
+          <Rect x={-LABEL_W / 2} y={-14} width={LABEL_W} height={28} fill={MEASURE_COLOR} cornerRadius={7} shadowColor="#000" shadowOpacity={0.2} shadowBlur={4} />
+          <Text
+            x={-LABEL_W / 2}
+            y={-14}
+            width={LABEL_W}
+            height={28}
+            align="center"
+            verticalAlign="middle"
+            text={formatLength(length, units)}
+            fontSize={15}
+            fontStyle="600"
+            fontFamily="system-ui, -apple-system, sans-serif"
+            fill="#fff"
+          />
+        </Group>
+      )}
+    </Layer>
   )
 }
 

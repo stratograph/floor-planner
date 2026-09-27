@@ -8,7 +8,7 @@ export interface View {
   scale: number
 }
 
-export type Mode = 'arrange' | 'calibrate'
+export type Mode = 'arrange' | 'calibrate' | 'measure'
 
 /** Calibration line endpoints, in floorplan image pixels. */
 export interface CalLine {
@@ -24,6 +24,9 @@ interface UiState {
   mode: Mode
   setMode: (mode: Mode) => void
   calLine: CalLine | null
+  /** The measuring tool's line, in world cm. Never persisted; cleared whenever the mode changes. */
+  measureLine: CalLine | null
+  setMeasureLine: (line: CalLine | null) => void
   setCalLine: (line: CalLine | null) => void
   /** Bumped each time the user finishes drawing a calibration line. */
   calLineDrawn: number
@@ -50,7 +53,9 @@ export const useUi = create<UiState>()((set) => ({
   view: { x: 0, y: 0, scale: 1 },
   setView: (view) => set({ view }),
   mode: 'arrange',
-  setMode: (mode) => set({ mode, selectedId: null }),
+  setMode: (mode) => set({ mode, selectedId: null, measureLine: null }),
+  measureLine: null,
+  setMeasureLine: (measureLine) => set({ measureLine }),
   calLine: null,
   setCalLine: (calLine) => set({ calLine }),
   calLineDrawn: 0,

@@ -89,8 +89,26 @@ export function TopBar() {
 
       <div className="spacer" />
 
-      {plan && mode === 'arrange' && (
+      {plan?.cmPerPx && mode !== 'calibrate' && (
         <>
+          <button
+            className={`btn small toggle ${mode === 'measure' ? 'on' : ''}`}
+            aria-pressed={mode === 'measure'}
+            onClick={() => setMode(mode === 'measure' ? 'arrange' : 'measure')}
+            title="Measure (M)"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+              <path
+                d="M1.5 10.5l9-9 4 4-9 9zM4 8l1.5 1.5M6 6l2 2M8 4l1.5 1.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </svg>
+            Measure
+          </button>
           <label className="opacity" title="Floorplan opacity">
             <span aria-hidden>◐</span>
             <input type="range" min={0.15} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(parseFloat(e.target.value))} aria-label="Floorplan opacity" />
