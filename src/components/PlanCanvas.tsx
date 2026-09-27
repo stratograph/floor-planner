@@ -211,7 +211,11 @@ export function PlanCanvas({ plan }: Props) {
       } else {
         return
       }
-      el.setPointerCapture?.(e.pointerId)
+      try {
+        el.setPointerCapture?.(e.pointerId)
+      } catch {
+        // The pointer may already be gone (e.g. released before this handler ran); dragging still works via window listeners.
+      }
     }
 
     const onMove = (e: PointerEvent) => {
